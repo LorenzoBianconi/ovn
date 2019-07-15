@@ -4005,14 +4005,18 @@ static void
 build_empty_lb_event_flow(struct ovn_datapath *od, struct hmap *lflows,
                           struct smap_node *node, char *ip_address,
                           struct nbrec_load_balancer *lb, uint16_t port,
-                          int addr_family, int pl)
+                          int addr_family, int pl, struct shash *meter_groups)
 {
     if (!controller_event_en || node->value[0]) {
         return;
     }
 
     struct ds match = DS_EMPTY_INITIALIZER;
-    char *action;
+    char *meter = "", *action;
+
+    if (meter_groups && shash_find(meter_groups, "event-elb")) {
+        meter = "event-elb";
+    }
 
     if (addr_family == AF_INET) {
         ds_put_format(&match, "ip4.dst == %s && %s",
@@ -4026,18 +4030,20 @@ build_empty_lb_event_flow(struct ovn_datapath *od, struct hmap *lflows,
                       port);
     }
     action = xasprintf("trigger_event(event = \"%s\", "
-                   "vip = \"%s\", protocol = \"%s\", "
-                   "load_balancer = \"" UUID_FMT "\");",
-                   event_to_string(OVN_EVENT_EMPTY_LB_BACKENDS),
-                   node->key, lb->protocol,
-                   UUID_ARGS(&lb->header_.uuid));
+                       "meter = \"%s\", vip = \"%s\", "
+                       "protocol = \"%s\", "
+                       "load_balancer = \"" UUID_FMT "\");",
+                       event_to_string(OVN_EVENT_EMPTY_LB_BACKENDS),
+                       meter, node->key, lb->protocol,
+                       UUID_ARGS(&lb->header_.uuid));
     ovn_lflow_add(lflows, od, pl, 130, ds_cstr(&match), action);
     ds_destroy(&match);
     free(action);
 }
 
 static void
-build_pre_lb(struct ovn_datapath *od, struct hmap *lflows)
+build_pre_lb(struct ovn_datapath *od, struct hmap *lflows,
+             struct shash *meter_groups)
 {
     /* Do not send ND packets to conntrack */
     ovn_lflow_add(lflows, od, S_SWITCH_IN_PRE_LB, 110,
@@ -4074,7 +4080,8 @@ build_pre_lb(struct ovn_datapath *od, struct hmap *lflows)
             }
 
             build_empty_lb_event_flow(od, lflows, node, ip_address, lb,
-                                      port, addr_family, S_SWITCH_IN_PRE_LB);
+                                      port, addr_family, S_SWITCH_IN_PRE_LB,
+                                      meter_groups);
 
             free(ip_address);
 
@@ -4894,7 +4901,8 @@ build_lrouter_groups(struct hmap *ports, struct ovs_list *lr_list)
 static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
-                    struct hmap *mcgroups, struct hmap *igmp_groups)
+                    struct hmap *mcgroups, struct hmap *igmp_groups,
+                    struct shash *meter_groups)
 {
     /* This flow table structure is documented in ovn-northd(8), so please
      * update ovn-northd.8.xml if you change anything. */
@@ -4911,7 +4919,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         }
 
         build_pre_acls(od, lflows);
-        build_pre_lb(od, lflows);
+        build_pre_lb(od, lflows, meter_groups);
         build_pre_stateful(od, lflows);
         build_acls(od, lflows, port_groups);
         build_qos(od, lflows);
@@ -6129,10 +6137,12 @@ add_router_lb_flow(struct hmap *lflows, struct ovn_datapath *od,
                    struct ds *match, struct ds *actions, int priority,
                    const char *lb_force_snat_ip, struct smap_node *node,
                    bool is_udp, int addr_family, char *ip_addr,
-                   uint16_t l4_port, struct nbrec_load_balancer *lb)
+                   uint16_t l4_port, struct nbrec_load_balancer *lb,
+                   struct shash *meter_groups)
 {
     build_empty_lb_event_flow(od, lflows, node, ip_addr, lb,
-                              l4_port, addr_family, S_ROUTER_IN_DNAT);
+                              l4_port, addr_family, S_ROUTER_IN_DNAT,
+                              meter_groups);
 
     /* A match and actions for new connections. */
     char *new_match = xasprintf("ct.new && %s", ds_cstr(match));
@@ -6291,7 +6301,7 @@ copy_ra_to_sb(struct ovn_port *op, const char *address_mode)
 
 static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *lflows)
+                    struct hmap *lflows, struct shash *meter_groups)
 {
     /* This flow table structure is documented in ovn-northd(8), so please
      * update ovn-northd.8.xml if you change anything. */
@@ -7494,7 +7504,8 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                 }
                 add_router_lb_flow(lflows, od, &match, &actions, prio,
                                    lb_force_snat_ip, node, is_udp,
-                                   addr_family, ip_address, port, lb);
+                                   addr_family, ip_address, port, lb,
+                                   meter_groups);
 
                 free(ip_address);
             }
@@ -8248,13 +8259,14 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
 static void
 build_lflows(struct northd_context *ctx, struct hmap *datapaths,
              struct hmap *ports, struct hmap *port_groups,
-             struct hmap *mcgroups, struct hmap *igmp_groups)
+             struct hmap *mcgroups, struct hmap *igmp_groups,
+             struct shash *meter_groups)
 {
     struct hmap lflows = HMAP_INITIALIZER(&lflows);
 
     build_lswitch_flows(datapaths, ports, port_groups, &lflows, mcgroups,
-                        igmp_groups);
-    build_lrouter_flows(datapaths, ports, &lflows);
+                        igmp_groups, meter_groups);
+    build_lrouter_flows(datapaths, ports, &lflows, meter_groups);
 
     /* Push changes to the Logical_Flow table to database. */
     const struct sbrec_logical_flow *sbflow, *next_sbflow;
@@ -8922,6 +8934,16 @@ build_mcast_groups(struct northd_context *ctx,
 }
 
 static void
+build_meter_groups(struct northd_context *ctx,
+                   struct shash *meter_groups)
+{
+    const struct nbrec_meter *nb_meter;
+    NBREC_METER_FOR_EACH (nb_meter, ctx->ovnnb_idl) {
+        shash_add(meter_groups, nb_meter->name, nb_meter);
+    }
+}
+
+static void
 ovnnb_db_run(struct northd_context *ctx,
              struct ovsdb_idl_index *sbrec_chassis_by_name,
              struct ovsdb_idl_loop *sb_loop,
@@ -8934,6 +8956,7 @@ ovnnb_db_run(struct northd_context *ctx,
     struct hmap port_groups;
     struct hmap mcast_groups;
     struct hmap igmp_groups;
+    struct shash meter_groups = SHASH_INITIALIZER(&meter_groups);
 
     build_datapaths(ctx, datapaths, lr_list);
     build_ports(ctx, sbrec_chassis_by_name, datapaths, ports);
@@ -8942,8 +8965,9 @@ ovnnb_db_run(struct northd_context *ctx,
     build_lrouter_groups(ports, lr_list);
     build_ip_mcast(ctx, datapaths);
     build_mcast_groups(ctx, datapaths, ports, &mcast_groups, &igmp_groups);
+    build_meter_groups(ctx, &meter_groups);
     build_lflows(ctx, datapaths, ports, &port_groups, &mcast_groups,
-                 &igmp_groups);
+                 &igmp_groups, &meter_groups);
 
     sync_address_sets(ctx);
     sync_port_groups(ctx);
@@ -8963,6 +8987,12 @@ ovnnb_db_run(struct northd_context *ctx,
     hmap_destroy(&igmp_groups);
     hmap_destroy(&mcast_groups);
     hmap_destroy(&port_groups);
+
+    struct shash_node *node, *next;
+    SHASH_FOR_EACH_SAFE (node, next, &meter_groups) {
+        shash_delete(&meter_groups, node);
+    }
+    shash_destroy(&meter_groups);
 
     /* Sync ipsec configuration.
      * Copy nb_cfg from northbound to southbound database.

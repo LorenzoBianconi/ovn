@@ -14724,11 +14724,11 @@ ovs-vsctl -- add-port br-int vif33 -- \
         options:rxq_pcap=hv$i/vif33-rx.pcap \
         ofport-request=33
 
-
 ovn-nbctl --wait=hv set NB_Global . options:controller_event=true
 ovn-nbctl lb-add lb0 192.168.1.100:80 ""
 ovn-nbctl ls-lb-add sw0 lb0
 uuid_lb0=$(ovn-nbctl --bare --columns=_uuid find load_balancer name=lb0)
+ovn-nbctl --wait=hv meter-add event-elb drop 100 pktps 10
 
 ovn-nbctl lb-add lb1 192.168.2.100:80 ""
 ovn-nbctl lr-lb-add lr0 lb1
