@@ -5662,10 +5662,20 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         ds_clear(&match);
         ds_put_format(&match, "outport == %s", op->json_key);
         if (lsp_is_enabled(op->nbsp)) {
+            ds_clear(&actions);
+
+            if (!strcmp(op->nbsp->type, "localnet")) {
+                const char *queue_id = smap_get(&op->sb->options,
+                                                "qdisc_queue_id");
+                if (queue_id) {
+                    ds_put_format(&actions, "set_queue(%s); ", queue_id);
+                }
+            }
+            ds_put_cstr(&actions, "output;");
             build_port_security_l2("eth.dst", op->ps_addrs, op->n_ps_addrs,
                                    &match);
             ovn_lflow_add(lflows, op->od, S_SWITCH_OUT_PORT_SEC_L2, 50,
-                          ds_cstr(&match), "output;");
+                          ds_cstr(&match), ds_cstr(&actions));
         } else {
             ovn_lflow_add(lflows, op->od, S_SWITCH_OUT_PORT_SEC_L2, 150,
                           ds_cstr(&match), "drop;");
