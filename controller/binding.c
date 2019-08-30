@@ -18,6 +18,7 @@
 #include "ha-chassis.h"
 #include "lflow.h"
 #include "lport.h"
+#include "patch.h"
 
 #include "lib/bitmap.h"
 #include "openvswitch/poll-loop.h"
@@ -520,6 +521,9 @@ consider_local_datapath(struct ovsdb_idl_txn *ovnsb_idl_txn,
     } else if (!strcmp(binding_rec->type, "localnet")) {
         /* Add all localnet ports to local_lports so that we allocate ct zones
          * for them. */
+        if (qos_map && ovs_idl_txn) {
+            get_qos_params(binding_rec, qos_map);
+        }
         sset_add(local_lports, binding_rec->logical_port);
     } else if (!strcmp(binding_rec->type, "external")) {
         if (ha_chassis_group_contains(binding_rec->ha_chassis_group,
@@ -632,6 +636,57 @@ consider_localnet_port(const struct sbrec_port_binding *binding_rec,
     ld->localnet_port = binding_rec;
 }
 
+static void
+add_egress_interface_mappings(const struct ovsrec_bridge_table *bridge_tb,
+                              const struct ovsrec_open_vswitch_table *ovs_tb,
+                              const struct sbrec_port_binding_table *pb_tb,
+                              struct sset *egress_ifaces)
+{
+    struct shash bridge_mappings = SHASH_INITIALIZER(&bridge_mappings);
+
+    add_ovs_bridge_mappings(ovs_tb, bridge_tb, &bridge_mappings);
+
+    const struct sbrec_port_binding *binding;
+    SBREC_PORT_BINDING_TABLE_FOR_EACH (binding, pb_tb) {
+        const char *network = smap_get(&binding->options, "network_name");
+        if (!network) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
+            VLOG_ERR_RL(&rl, "%s port '%s' has no network name.",
+                         binding->type, binding->logical_port);
+            continue;
+        }
+        struct ovsrec_bridge *br_ln = shash_find_data(&bridge_mappings,
+                                                      network);
+        if (!br_ln) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
+            VLOG_ERR_RL(&rl, "bridge not found for %s port '%s' "
+                    "with network name '%s'",
+                    binding->type, binding->logical_port, network);
+            continue;
+        }
+
+        /* Add egress-ifaces from the connected bridge */
+        for (size_t i = 0; i < br_ln->n_ports; i++) {
+            const struct ovsrec_port *port_rec = br_ln->ports[i];
+
+            for (size_t j = 0; j < port_rec->n_interfaces; j++) {
+                const struct ovsrec_interface *iface_rec;
+
+                iface_rec = port_rec->interfaces[j];
+                bool is_egress_iface = smap_get_bool(&iface_rec->external_ids,
+                                                     "ovn-egress-iface",
+                                                     false);
+                if (!is_egress_iface) {
+                    continue;
+                }
+                sset_add(egress_ifaces, iface_rec->name);
+            }
+        }
+    }
+
+    shash_destroy(&bridge_mappings);
+}
+
 void
 binding_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
             struct ovsdb_idl_txn *ovs_idl_txn,
@@ -644,6 +699,8 @@ binding_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
             const struct ovsrec_bridge *br_int,
             const struct sbrec_chassis *chassis_rec,
             const struct sset *active_tunnels,
+            const struct ovsrec_bridge_table *bridge_table,
+            const struct ovsrec_open_vswitch_table *ovs_table,
             struct hmap *local_datapaths, struct sset *local_lports,
             struct sset *local_lport_ids)
 {
@@ -655,6 +712,9 @@ binding_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
     struct shash lport_to_iface = SHASH_INITIALIZER(&lport_to_iface);
     struct sset egress_ifaces = SSET_INITIALIZER(&egress_ifaces);
     struct hmap qos_map;
+
+    add_egress_interface_mappings(bridge_table, ovs_table, port_binding_table,
+                                  &egress_ifaces);
 
     hmap_init(&qos_map);
     if (br_int) {
