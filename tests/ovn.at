@@ -1525,6 +1525,12 @@ fwd_group();
 fwd_group(liveness="false", childports="eth0", "lsp1");
     Syntax error at `"false"' expecting `,'.
 
+# prefix delegation
+handle_dhcpv6_reply{};
+    formats as handle_dhcpv6_reply { drop; };
+    encodes as controller(userdata=00.00.00.13.00.00.00.00)
+    has prereqs ip6
+
 # Miscellaneous negative tests.
 ;
     Syntax error at `;'.

@@ -2182,6 +2182,13 @@ tcp.flags = RST;
           </p>
         </dd>
 
+        <dt><code>handle_dhcpv6_reply;</code></dt>
+        <dd>
+          <p>
+            This action is used to parse DHCPv6 replies from IPv6
+            Delegation Router and managed IPv6 Prefix delegation state machine
+          </p>
+        </dd>
       </dl>
     </column>
 
