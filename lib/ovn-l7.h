@@ -77,6 +77,8 @@ struct gen_opts_map {
 #define DHCP_OPT_PATH_PREFIX DHCP_OPTION("path_prefix", 210, "str")
 #define DHCP_OPT_TFTP_SERVER_ADDRESS \
     DHCP_OPTION("tftp_server_address", 150, "ipv4")
+/* fixed DHCP header */
+#define DHCP_OPT_FILENAME DHCP_OPTION("file", 300, "str")
 
 static inline uint32_t
 gen_opt_hash(char *opt_name)

@@ -1137,9 +1137,34 @@ pinctrl_handle_put_dhcp_opts(
      *| 4 Bytes padding | 1 Byte (option end 0xFF ) | 4 Bytes padding|
      * --------------------------------------------------------------
      */
+    /* compute opt len */
+    unsigned char *ptr = (unsigned char *)userdata->data;
+    unsigned char *buf = xmalloc(userdata->size);
+    uint16_t len = 0, opt_len = 0;
+    char file[128] = {};
+
+    while (len < userdata->size) {
+        int cur_len = ptr[len + 2];
+        uint16_t code;
+
+        memcpy(&code, &ptr[len], 2);
+        switch (code) {
+        case 300: /* DHCP_OPT_FILENAME */
+          memcpy(file, &ptr[len + 3], MIN(cur_len, sizeof(file)));
+          break;
+        default:
+          /* code < 255 */
+          buf[opt_len] = code;
+          memcpy(buf + 1 + opt_len, &ptr[len + 2], cur_len + 1);
+          opt_len += 2 + cur_len;
+          break;
+        }
+        len += 3 + cur_len;
+    }
+
     uint16_t new_l4_size = UDP_HEADER_LEN + DHCP_HEADER_LEN + 16;
     if (msg_type != DHCP_MSG_NAK) {
-        new_l4_size += userdata->size;
+        new_l4_size += opt_len;
     }
     size_t new_packet_size = pkt_in->l4_ofs + new_l4_size;
 
@@ -1165,11 +1190,12 @@ pinctrl_handle_put_dhcp_opts(
         &pkt_out, dp_packet_pull(pkt_in, DHCP_HEADER_LEN), DHCP_HEADER_LEN);
     dhcp_data->op = DHCP_OP_REPLY;
     dhcp_data->yiaddr = (msg_type == DHCP_MSG_NAK) ? 0 : *offer_ip;
+    memcpy(dhcp_data->file, file, sizeof(dhcp_data->file));
     dp_packet_put(&pkt_out, &magic_cookie, sizeof(ovs_be32));
 
     uint16_t out_dhcp_opts_size = 12;
     if (msg_type != DHCP_MSG_NAK) {
-      out_dhcp_opts_size += userdata->size;
+      out_dhcp_opts_size += opt_len;
     }
     uint8_t *out_dhcp_opts = dp_packet_put_zeros(&pkt_out,
                                                  out_dhcp_opts_size);
@@ -1180,8 +1206,8 @@ pinctrl_handle_put_dhcp_opts(
     out_dhcp_opts += 3;
 
     if (msg_type != DHCP_MSG_NAK) {
-      memcpy(out_dhcp_opts, userdata->data, userdata->size);
-      out_dhcp_opts += userdata->size;
+      memcpy(out_dhcp_opts, buf, opt_len);
+      out_dhcp_opts += opt_len;
     }
 
     /* Padding */
@@ -1210,6 +1236,7 @@ pinctrl_handle_put_dhcp_opts(
                  ETH_ADDR_ARGS(l2->eth_src), IP_ARGS(*offer_ip));
 
     success = 1;
+    free(buf);
 exit:
     if (!ofperr) {
         union mf_subvalue sv;
