@@ -3428,7 +3428,7 @@ OVS_TRAFFIC_VSWITCHD_STOP(["/failed to query port patch-.*/d
 AT_CLEANUP
 
 AT_SETUP([ovn -- IPv6 prefix delegation])
-AT_SKIP_IF([test "$HAVE_DIBBLER_SERVER" = no])
+AT_SKIP_IF([test $HAVE_DIBBLER_SERVER = no])
 AT_KEYWORDS([ovn-ipv6-prefix_d])
 
 ovn_start
