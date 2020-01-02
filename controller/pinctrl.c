@@ -1150,6 +1150,13 @@ pinctrl_find_prefixd_state(const struct flow *ip_flow, unsigned aid)
     return NULL;
 }
 
+/* Called with in the pinctrl_handler thread context. */
+static void
+notify_pinctrl_main(void)
+{
+    seq_change(pinctrl_main_seq);
+}
+
 static void
 pinctrl_prefixd_state_handler(const struct flow *ip_flow,
                               struct in6_addr addr, unsigned aid,
@@ -1167,6 +1174,7 @@ pinctrl_prefixd_state_handler(const struct flow *ip_flow,
         pfd->prefix = addr;
         pfd->t1 = t1;
         pfd->t2 = t2;
+        notify_pinctrl_main();
     }
 }
 
@@ -2355,13 +2363,6 @@ notify_pinctrl_handler(void)
     seq_change(pinctrl_handler_seq);
 }
 
-/* Called with in the pinctrl_handler thread context. */
-static void
-notify_pinctrl_main(void)
-{
-    seq_change(pinctrl_main_seq);
-}
-
 /* pinctrl_handler pthread function. */
 static void *
 pinctrl_handler(void *arg_)
@@ -3174,8 +3175,8 @@ static bool
 fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
                        struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
                        const struct hmap *local_datapaths,
-                       struct lport_addresses laddrs, int64_t tunnel_key,
-                       int64_t dp_tunnel_key)
+                       struct eth_addr ea, struct in6_addr ipv6_addr,
+                       int64_t tunnel_key, int64_t dp_tunnel_key)
     OVS_REQUIRES(pinctrl_mutex)
 {
     const struct local_datapath *ld;
@@ -3205,8 +3206,8 @@ fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
                     &ipv6_prefixd, pb->logical_port);
             if (!pfd) {
                 pfd = xzalloc(sizeof *pfd);
-                pfd->ipv6_addr = laddrs.ipv6_addrs[0].addr;
-                pfd->ea = laddrs.ea;
+                pfd->ipv6_addr = ipv6_addr;
+                pfd->ea = ea;
                 pfd->cmac = c_addrs.ea;
                 pfd->aid = random_range(0xfffffff);
                 pfd->metadata = dp_tunnel_key;
@@ -3281,21 +3282,33 @@ prepare_ipv6_prefixd(struct ovsdb_idl_txn *ovnsb_idl_txn,
                 continue;
             }
 
-            struct lport_addresses laddrs;
+            struct in6_addr ip6_addr;
+            struct eth_addr ea;
             for (i = 0; i < pb->n_mac; i++) {
-                if (extract_lsp_addresses(pb->mac[i], &laddrs) &&
-                    laddrs.n_ipv6_addrs > 0 &&
-                    !in6_is_lla(&laddrs.ipv6_addrs[0].addr)) {
-                        break;
-                    }
+                struct lport_addresses laddrs;
+
+                if (!extract_lsp_addresses(pb->mac[i], &laddrs)) {
+                    continue;
+                }
+
+                ea = laddrs.ea;
+                if (laddrs.n_ipv6_addrs > 0) {
+                    ip6_addr = laddrs.ipv6_addrs[0].addr;
+                    break;
+                }
             }
-            if (i == pb->n_mac) {
+
+            if (eth_addr_is_zero(ea)) {
                 continue;
+            }
+
+            if (i == pb->n_mac) {
+                in6_generate_lla(ea, &ip6_addr);
             }
 
             changed |= fill_ipv6_prefix_state(ovnsb_idl_txn,
                                               sbrec_port_binding_by_datapath,
-                                              local_datapaths, laddrs,
+                                              local_datapaths, ea, ip6_addr,
                                               peer->tunnel_key,
                                               peer->datapath->tunnel_key);
         }
