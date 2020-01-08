@@ -275,7 +275,7 @@ static void destroy_ipv6_prefixd(void);
 static void ipv6_prefixd_wait(long long int timeout);
 static void
 prepare_ipv6_prefixd(struct ovsdb_idl_txn *ovnsb_idl_txn,
-                     struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
+                     struct ovsdb_idl *ovnsb_idl,
                      struct ovsdb_idl_index *sbrec_port_binding_by_name,
                      const struct hmap *local_datapaths,
                      const struct sbrec_chassis *chassis,
@@ -2473,6 +2473,7 @@ pinctrl_handler(void *arg_)
 /* Called by ovn-controller. */
 void
 pinctrl_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
+            struct ovsdb_idl *ovnsb_idl,
             struct ovsdb_idl_index *sbrec_datapath_binding_by_key,
             struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
             struct ovsdb_idl_index *sbrec_port_binding_by_key,
@@ -2508,7 +2509,7 @@ pinctrl_run(struct ovsdb_idl_txn *ovnsb_idl_txn,
                            sbrec_port_binding_by_name, br_int, chassis,
                            local_datapaths, active_tunnels);
     prepare_ipv6_ras(local_datapaths);
-    prepare_ipv6_prefixd(ovnsb_idl_txn, sbrec_port_binding_by_datapath,
+    prepare_ipv6_prefixd(ovnsb_idl_txn, ovnsb_idl,
                          sbrec_port_binding_by_name, local_datapaths,
                          chassis, active_tunnels);
     sync_dns_cache(dns_table);
@@ -3173,7 +3174,7 @@ prepare_ipv6_ras(const struct hmap *local_datapaths)
 
 static bool
 fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
-                       struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
+                       struct ovsdb_idl *ovnsb_idl,
                        const struct hmap *local_datapaths,
                        struct eth_addr ea, struct in6_addr ipv6_addr,
                        int64_t tunnel_key, int64_t dp_tunnel_key)
@@ -3183,13 +3184,8 @@ fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
     bool changed = false;
 
     HMAP_FOR_EACH (ld, hmap_node, local_datapaths) {
-        struct sbrec_port_binding *target = sbrec_port_binding_index_init_row(
-            sbrec_port_binding_by_datapath);
-        sbrec_port_binding_index_set_datapath(target, ld->datapath);
-
-        struct sbrec_port_binding *pb;
-        SBREC_PORT_BINDING_FOR_EACH_EQUAL (pb, target,
-                                           sbrec_port_binding_by_datapath) {
+        const struct sbrec_port_binding *pb, *pb_next;
+        SBREC_PORT_BINDING_FOR_EACH_SAFE (pb, pb_next, ovnsb_idl) {
             if (!smap_get_bool(&pb->options, "ipv6_prefix", false)) {
                 continue;
             }
@@ -3230,7 +3226,6 @@ fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
                 smap_destroy(&options);
             }
         }
-        sbrec_port_binding_index_destroy_row(target);
     }
 
     return changed;
@@ -3238,7 +3233,7 @@ fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
 
 static void
 prepare_ipv6_prefixd(struct ovsdb_idl_txn *ovnsb_idl_txn,
-                     struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
+                     struct ovsdb_idl *ovnsb_idl,
                      struct ovsdb_idl_index *sbrec_port_binding_by_name,
                      const struct hmap *local_datapaths,
                      const struct sbrec_chassis *chassis,
@@ -3250,13 +3245,8 @@ prepare_ipv6_prefixd(struct ovsdb_idl_txn *ovnsb_idl_txn,
     int i;
 
     HMAP_FOR_EACH (ld, hmap_node, local_datapaths) {
-        struct sbrec_port_binding *target = sbrec_port_binding_index_init_row(
-            sbrec_port_binding_by_datapath);
-        sbrec_port_binding_index_set_datapath(target, ld->datapath);
-
-        struct sbrec_port_binding *pb;
-        SBREC_PORT_BINDING_FOR_EACH_EQUAL (pb, target,
-                                           sbrec_port_binding_by_datapath) {
+        const struct sbrec_port_binding *pb, *pb_next;
+        SBREC_PORT_BINDING_FOR_EACH_SAFE (pb, pb_next, ovnsb_idl) {
             if (!smap_get_bool(&pb->options, "ipv6_prefix_delegation",
                                false)) {
                 continue;
@@ -3306,13 +3296,11 @@ prepare_ipv6_prefixd(struct ovsdb_idl_txn *ovnsb_idl_txn,
                 in6_generate_lla(ea, &ip6_addr);
             }
 
-            changed |= fill_ipv6_prefix_state(ovnsb_idl_txn,
-                                              sbrec_port_binding_by_datapath,
+            changed |= fill_ipv6_prefix_state(ovnsb_idl_txn, ovnsb_idl,
                                               local_datapaths, ea, ip6_addr,
                                               peer->tunnel_key,
                                               peer->datapath->tunnel_key);
         }
-        sbrec_port_binding_index_destroy_row(target);
     }
 
     if (changed) {
