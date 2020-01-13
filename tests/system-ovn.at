@@ -3457,7 +3457,7 @@ ovn-nbctl ls-add public
 
 ovn-nbctl lrp-add R1 rp-sw0 00:00:01:01:02:03 192.168.1.1/24
 ovn-nbctl lrp-add R1 rp-sw1 00:00:03:01:02:03 192.168.2.1/24
-ovn-nbctl lrp-add R1 rp-public 00:00:02:01:02:03 172.16.1.1/24 2001:db8:3333::1/64 \
+ovn-nbctl lrp-add R1 rp-public 00:00:02:01:02:03 172.16.1.1/24 \
     -- set Logical_Router_Port rp-public options:redirect-chassis=hv1
 
 ovn-nbctl lsp-add sw0 sw0-rp -- set Logical_Switch_Port sw0-rp \
@@ -3525,17 +3525,17 @@ ovn-nbctl --wait=hv sync
 sleep 10
 kill $(pidof dibbler-server)
 
-OVS_WAIT_UNTIL([ovn-sbctl list port_binding rp-public | grep ipv6_ra_pd_list])
-OVS_WAIT_UNTIL([ovn-sbctl list port_binding rp-sw0 | grep ipv6_ra_pd_list])
-OVS_WAIT_UNTIL([ovn-sbctl list port_binding rp-sw1 | grep ipv6_ra_pd_list])
-AT_CHECK([ovn-sbctl get port_binding rp-public options:ipv6_ra_pd_list], [0], [dnl
-"2001:db8:3333::6a2f:0:0/96"
+OVS_WAIT_UNTIL([ovn-nbctl list logical_router_port rp-public | grep ipv6_prefix])
+OVS_WAIT_UNTIL([ovn-nbctl list logical_router_port rp-sw0 | grep ipv6_prefix])
+OVS_WAIT_UNTIL([ovn-nbctl list logical_router_port rp-sw1 | grep ipv6_prefix])
+AT_CHECK([ovn-nbctl get logical_router_port rp-public ipv6_prefix], [0], [dnl
+[["2001:db8:3333::6a2f:0:0/96"]]
 ])
-AT_CHECK([ovn-sbctl get port_binding rp-sw0 options:ipv6_ra_pd_list], [0], [dnl
-"2001:db8:3333::5b81:0:0/96"
+AT_CHECK([ovn-nbctl get logical_router_port rp-sw0 ipv6_prefix], [0], [dnl
+[["2001:db8:3333::5b81:0:0/96"]]
 ])
-AT_CHECK([ovn-sbctl get port_binding rp-sw1 options:ipv6_ra_pd_list], [0], [dnl
-"2001:db8:3333::42f1:0:0/96"
+AT_CHECK([ovn-nbctl get logical_router_port rp-sw1 ipv6_prefix], [0], [dnl
+[["2001:db8:3333::42f1:0:0/96"]]
 ])
 
 kill $(pidof ovn-controller)
