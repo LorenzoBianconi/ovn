@@ -8839,20 +8839,21 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                             &nat->header_);
                 }
 
-                ds_clear(&match);
-                ds_put_format(
-                    &match, "outport == %s && %s == %s",
-                    od->l3dgw_port->json_key,
-                    is_v6 ? "xxreg0" : "reg0", nat->external_ip);
-                ds_clear(&actions);
-                ds_put_format(
-                    &actions, "eth.dst = %s; next;",
-                    distributed ? nat->external_mac :
-                    od->l3dgw_port->lrp_networks.ea_s);
-                ovn_lflow_add_with_hint(lflows, od, S_ROUTER_IN_ARP_RESOLVE,
-                                        100, ds_cstr(&match),
-                                        ds_cstr(&actions),
-                                        &nat->header_);
+                if (!distributed) {
+                    ds_clear(&match);
+                    ds_put_format(
+                        &match, "outport == %s && %s == %s",
+                        od->l3dgw_port->json_key,
+                        is_v6 ? "xxreg0" : "reg0", nat->external_ip);
+                    ds_clear(&actions);
+                    ds_put_format(
+                        &actions, "eth.dst = %s; next;",
+                        od->l3dgw_port->lrp_networks.ea_s);
+                    ovn_lflow_add_with_hint(lflows, od, S_ROUTER_IN_ARP_RESOLVE,
+                                            100, ds_cstr(&match),
+                                            ds_cstr(&actions),
+                                            &nat->header_);
+                }
             }
 
             /* Egress UNDNAT table: It is for already established connections'
