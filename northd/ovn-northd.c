@@ -1126,6 +1126,55 @@ build_datapaths(struct northd_context *ctx, struct hmap *datapaths,
     }
 }
 
+struct ovn_string_node {
+    struct hmap_node key_node;
+    char *key;
+};
+
+static struct ovn_string_node *
+ovn_create_string_node(struct hmap *map, const char *key)
+{
+    struct ovn_string_node *node = xzalloc(sizeof *node);
+
+    node->key = xstrdup(key);
+    hmap_insert(map, &node->key_node, hash_string(node->key, 0));
+    return node;
+}
+
+static void
+ovn_string_node_destroy(struct hmap *map, struct ovn_string_node *node)
+{
+    if (node) {
+        hmap_remove(map, &node->key_node);
+        free(node->key);
+        free(node);
+    }
+}
+
+static void
+ovn_string_node_destroy_map(struct hmap *map)
+{
+    struct ovn_string_node *node, *next_node;
+    HMAP_FOR_EACH_SAFE (node, next_node, key_node, map) {
+        ovn_string_node_destroy(map, node);
+    }
+    hmap_destroy(map);
+}
+
+static struct ovn_string_node *
+ovn_string_node_find(const struct hmap *map, const char *name)
+{
+    struct ovn_string_node *node;
+
+    HMAP_FOR_EACH_WITH_HASH (node, key_node, hash_string(name, 0),
+                             map) {
+        if (!strcmp(node->key, name)) {
+            return node;
+        }
+    }
+    return NULL;
+}
+
 struct ovn_port {
     struct hmap_node key_node;  /* Index on 'key'. */
     char *key;                  /* nbs->name, nbr->name, sb->logical_port. */
@@ -8614,6 +8663,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
             continue;
         }
 
+        struct hmap snat_entries;
+        hmap_init(&snat_entries);
+
         struct v46_ip snat_ip, lb_snat_ip;
         const char *dnat_force_snat_ip = get_force_snat_ip(od, "dnat",
                                                            &snat_ip);
@@ -8840,19 +8892,26 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                 }
 
                 if (!distributed) {
-                    ds_clear(&match);
-                    ds_put_format(
-                        &match, "outport == %s && %s == %s",
-                        od->l3dgw_port->json_key,
-                        is_v6 ? "xxreg0" : "reg0", nat->external_ip);
-                    ds_clear(&actions);
-                    ds_put_format(
-                        &actions, "eth.dst = %s; next;",
-                        od->l3dgw_port->lrp_networks.ea_s);
-                    ovn_lflow_add_with_hint(lflows, od, S_ROUTER_IN_ARP_RESOLVE,
-                                            100, ds_cstr(&match),
-                                            ds_cstr(&actions),
-                                            &nat->header_);
+                    if (!ovn_string_node_find(&snat_entries,
+                                              nat->external_ip)) {
+                        ovn_create_string_node(&snat_entries,
+                                               nat->external_ip);
+
+                        ds_clear(&match);
+                        ds_put_format(
+                            &match, "outport == %s && %s == %s",
+                            od->l3dgw_port->json_key,
+                            is_v6 ? "xxreg0" : "reg0", nat->external_ip);
+                        ds_clear(&actions);
+                        ds_put_format(
+                            &actions, "eth.dst = %s; next;",
+                            od->l3dgw_port->lrp_networks.ea_s);
+                        ovn_lflow_add_with_hint(lflows, od,
+                                                S_ROUTER_IN_ARP_RESOLVE,
+                                                100, ds_cstr(&match),
+                                                ds_cstr(&actions),
+                                                &nat->header_);
+                        }
                 }
             }
 
@@ -9033,6 +9092,8 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                         &nat->header_);
             }
         }
+
+        ovn_string_node_destroy_map(&snat_entries);
 
         /* Handle force SNAT options set in the gateway router. */
         if (dnat_force_snat_ip && !od->l3dgw_port) {
