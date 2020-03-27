@@ -17,6 +17,7 @@
 #define OVN_UTIL_H 1
 
 #include "lib/packets.h"
+#include "lib/ovn-sb-idl.h"
 #include "include/ovn/version.h"
 
 #define ovn_set_program_name(name) \
@@ -124,4 +125,9 @@ struct v46_ip {
 bool ip46_parse_cidr(const char *str, struct v46_ip *prefix,
                      unsigned int *plen);
 bool ip46_equals(const struct v46_ip *addr1, const struct v46_ip *addr2);
+
+const struct sbrec_mac_binding *
+mac_binding_lookup(struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip,
+                   const char *logical_port,
+                   const char *ip);
 #endif
