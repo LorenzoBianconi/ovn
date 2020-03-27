@@ -8953,7 +8953,8 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                             &nat->header_);
                 }
 
-                if (!sset_contains(&nat_entries, nat->external_ip)) {
+                if (!sset_contains(&nat_entries, nat->external_ip) &&
+                    !distributed) {
                     ds_clear(&match);
                     ds_put_format(
                         &match, "outport == %s && %s == %s",
@@ -8962,7 +8963,6 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     ds_clear(&actions);
                     ds_put_format(
                         &actions, "eth.dst = %s; next;",
-                        distributed ? nat->external_mac :
                         od->l3dgw_port->lrp_networks.ea_s);
                     ovn_lflow_add_with_hint(lflows, od,
                                             S_ROUTER_IN_ARP_RESOLVE,
@@ -10187,6 +10187,46 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
     ds_destroy(&actions);
 }
 
+static void
+build_distributed_mac_binding(struct northd_context *ctx,
+                              struct hmap *datapaths,
+                              struct ovsdb_idl_index *sbrec_mac_binding_by_ip)
+{
+    struct ovn_datapath *od;
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        if (!od->nbr) {
+            continue;
+        }
+
+        if (!od->l3dgw_port) {
+            continue;
+        }
+
+        for (int i = 0; i < od->nbr->n_nat; i++) {
+            const struct nbrec_nat *nat = od->nbr->nat[i];
+            struct eth_addr mac;
+
+            if (strcmp(nat->type, "dnat_and_snat") ||
+                !nat->external_mac ||
+                !eth_addr_from_string(nat->external_mac, &mac)) {
+                continue;
+            }
+
+            const struct sbrec_mac_binding *b =
+                mac_binding_lookup(sbrec_mac_binding_by_ip,
+                                   od->l3dgw_port->key, nat->external_ip);
+
+            if (!b) {
+                b = sbrec_mac_binding_insert(ctx->ovnsb_txn);
+                sbrec_mac_binding_set_logical_port(b, od->l3dgw_port->key);
+                sbrec_mac_binding_set_ip(b, nat->external_ip);
+                sbrec_mac_binding_set_mac(b, nat->external_mac);
+                sbrec_mac_binding_set_datapath(b, od->sb);
+            }
+        }
+    }
+}
+
 /* Updates the Logical_Flow and Multicast_Group tables in the OVN_SB database,
  * constructing their contents based on the OVN_NB database. */
 static void
@@ -10921,6 +10961,7 @@ build_meter_groups(struct northd_context *ctx,
 static void
 ovnnb_db_run(struct northd_context *ctx,
              struct ovsdb_idl_index *sbrec_chassis_by_name,
+             struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip,
              struct ovsdb_idl_loop *sb_loop,
              struct hmap *datapaths, struct hmap *ports,
              struct ovs_list *lr_list)
@@ -11026,6 +11067,8 @@ ovnnb_db_run(struct northd_context *ctx,
     build_meter_groups(ctx, &meter_groups);
     build_lflows(ctx, datapaths, ports, &port_groups, &mcast_groups,
                  &igmp_groups, &meter_groups, &lbs);
+    build_distributed_mac_binding(ctx, datapaths,
+                                  sbrec_mac_binding_by_lport_ip);
     ovn_update_ipv6_prefix(ports);
 
     sync_address_sets(ctx);
@@ -11561,6 +11604,7 @@ ovnsb_db_run(struct northd_context *ctx, struct ovsdb_idl_loop *sb_loop,
 static void
 ovn_db_run(struct northd_context *ctx,
            struct ovsdb_idl_index *sbrec_chassis_by_name,
+           struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip,
            struct ovsdb_idl_loop *ovnsb_idl_loop)
 {
     struct hmap datapaths, ports;
@@ -11568,7 +11612,8 @@ ovn_db_run(struct northd_context *ctx,
     ovs_list_init(&lr_list);
     hmap_init(&datapaths);
     hmap_init(&ports);
-    ovnnb_db_run(ctx, sbrec_chassis_by_name, ovnsb_idl_loop,
+    ovnnb_db_run(ctx, sbrec_chassis_by_name,
+                 sbrec_mac_binding_by_lport_ip, ovnsb_idl_loop,
                  &datapaths, &ports, &lr_list);
     ovnsb_db_run(ctx, ovnsb_idl_loop, &ports);
     destroy_datapaths_and_ports(&datapaths, &ports, &lr_list);
@@ -11892,6 +11937,11 @@ main(int argc, char *argv[])
     struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp
         = mcast_group_index_create(ovnsb_idl_loop.idl);
 
+    struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip
+        = ovsdb_idl_index_create2(ovnsb_idl_loop.idl,
+                                  &sbrec_mac_binding_col_logical_port,
+                                  &sbrec_mac_binding_col_ip);
+
     struct ovsdb_idl_index *sbrec_ip_mcast_by_dp
         = ip_mcast_index_create(ovnsb_idl_loop.idl);
 
@@ -11935,7 +11985,9 @@ main(int argc, char *argv[])
             }
 
             if (ovsdb_idl_has_lock(ovnsb_idl_loop.idl)) {
-                ovn_db_run(&ctx, sbrec_chassis_by_name, &ovnsb_idl_loop);
+                ovn_db_run(&ctx, sbrec_chassis_by_name,
+                           sbrec_mac_binding_by_lport_ip,
+                           &ovnsb_idl_loop);
                 if (ctx.ovnsb_txn) {
                     check_and_add_supported_dhcp_opts_to_sb_db(&ctx);
                     check_and_add_supported_dhcpv6_opts_to_sb_db(&ctx);
