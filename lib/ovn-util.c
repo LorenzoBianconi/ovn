@@ -549,3 +549,22 @@ ip46_equals(const struct v46_ip *addr1, const struct v46_ip *addr2)
             (addr1->family == AF_INET ? addr1->ipv4 == addr2->ipv4 :
              IN6_ARE_ADDR_EQUAL(&addr1->ipv6, &addr2->ipv6)));
 }
+
+const struct sbrec_mac_binding *
+mac_binding_lookup(struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip,
+                   const char *logical_port,
+                   const char *ip)
+{
+    struct sbrec_mac_binding *mb = sbrec_mac_binding_index_init_row(
+        sbrec_mac_binding_by_lport_ip);
+    sbrec_mac_binding_index_set_logical_port(mb, logical_port);
+    sbrec_mac_binding_index_set_ip(mb, ip);
+
+    const struct sbrec_mac_binding *retval
+        = sbrec_mac_binding_index_find(sbrec_mac_binding_by_lport_ip,
+                                       mb);
+
+    sbrec_mac_binding_index_destroy_row(mb);
+
+    return retval;
+}
