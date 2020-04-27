@@ -1188,9 +1188,9 @@ reg1[0] = put_dhcp_opts(offerip = 1.2.3.4, router = 10.0.0.1);
 reg2[5] = put_dhcp_opts(offerip=10.0.0.4,router=10.0.0.1,netmask=255.255.254.0,mtu=1400,domain_name="ovn.org",wpad="https://example.org",bootfile_name="https://127.0.0.1/boot.ipxe",path_prefix="/tftpboot");
     formats as reg2[5] = put_dhcp_opts(offerip = 10.0.0.4, router = 10.0.0.1, netmask = 255.255.254.0, mtu = 1400, domain_name = "ovn.org", wpad = "https://example.org", bootfile_name = "https://127.0.0.1/boot.ipxe", path_prefix = "/tftpboot");
     encodes as controller(userdata=00.00.00.02.00.00.00.00.00.01.de.10.00.00.00.25.0a.00.00.04.03.04.0a.00.00.01.01.04.ff.ff.fe.00.1a.02.05.78.0f.07.6f.76.6e.2e.6f.72.67.fc.13.68.74.74.70.73.3a.2f.2f.65.78.61.6d.70.6c.65.2e.6f.72.67.43.1b.68.74.74.70.73.3a.2f.2f.31.32.37.2e.30.2e.30.2e.31.2f.62.6f.6f.74.2e.69.70.78.65.d2.09.2f.74.66.74.70.62.6f.6f.74,pause)
-reg0[15] = put_dhcp_opts(offerip=10.0.0.4,router=10.0.0.1,netmask=255.255.255.0,mtu=1400,ip_forward_enable=1,default_ttl=121,dns_server={8.8.8.8,7.7.7.7},classless_static_route={30.0.0.0/24,10.0.0.4,40.0.0.0/16,10.0.0.6,0.0.0.0/0,10.0.0.1},ethernet_encap=1,router_discovery=0,tftp_server_address={10.0.0.4,10.0.0.5});
-    formats as reg0[15] = put_dhcp_opts(offerip = 10.0.0.4, router = 10.0.0.1, netmask = 255.255.255.0, mtu = 1400, ip_forward_enable = 1, default_ttl = 121, dns_server = {8.8.8.8, 7.7.7.7}, classless_static_route = {30.0.0.0/24, 10.0.0.4, 40.0.0.0/16, 10.0.0.6, 0.0.0.0/0, 10.0.0.1}, ethernet_encap = 1, router_discovery = 0, tftp_server_address = {10.0.0.4, 10.0.0.5});
-    encodes as controller(userdata=00.00.00.02.00.00.00.00.00.01.de.10.00.00.00.6f.0a.00.00.04.03.04.0a.00.00.01.01.04.ff.ff.ff.00.1a.02.05.78.13.01.01.17.01.79.06.08.08.08.08.08.07.07.07.07.79.14.18.1e.00.00.0a.00.00.04.10.28.00.0a.00.00.06.00.0a.00.00.01.24.01.01.1f.01.00.96.08.0a.00.00.04.0a.00.00.05,pause)
+reg0[15] = put_dhcp_opts(offerip=10.0.0.4,router=10.0.0.1,netmask=255.255.255.0,mtu=1400,ip_forward_enable=1,default_ttl=121,dns_server={8.8.8.8,7.7.7.7},classless_static_route={30.0.0.0/24,10.0.0.4,40.0.0.0/16,10.0.0.6,0.0.0.0/0,10.0.0.1},ethernet_encap=1,router_discovery=0,tftp_server_address={10.0.0.4,10.0.0.5},arp_cache_timeout=10,tcp_keepalive_interval=10);
+    formats as reg0[15] = put_dhcp_opts(offerip = 10.0.0.4, router = 10.0.0.1, netmask = 255.255.255.0, mtu = 1400, ip_forward_enable = 1, default_ttl = 121, dns_server = {8.8.8.8, 7.7.7.7}, classless_static_route = {30.0.0.0/24, 10.0.0.4, 40.0.0.0/16, 10.0.0.6, 0.0.0.0/0, 10.0.0.1}, ethernet_encap = 1, router_discovery = 0, tftp_server_address = {10.0.0.4, 10.0.0.5}, arp_cache_timeout = 10, tcp_keepalive_interval = 10);
+    encodes as controller(userdata=00.00.00.02.00.00.00.00.00.01.de.10.00.00.00.6f.0a.00.00.04.03.04.0a.00.00.01.01.04.ff.ff.ff.00.1a.02.05.78.13.01.01.17.01.79.06.08.08.08.08.08.07.07.07.07.79.14.18.1e.00.00.0a.00.00.04.10.28.00.0a.00.00.06.00.0a.00.00.01.24.01.01.1f.01.00.96.08.0a.00.00.04.0a.00.00.05.23.04.00.00.00.0a.26.04.00.00.00.0a,pause)
 
 reg1[0..1] = put_dhcp_opts(offerip = 1.2.3.4, router = 10.0.0.1);
     Cannot use 2-bit field reg1[0..1] where 1-bit field is required.
@@ -8818,8 +8818,7 @@ as ext1 ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
 AT_CHECK([ovn-nbctl --timeout=3 --wait=sb sync], [0], [ignore])
 
 # Allow some time for ovn-northd and ovn-controller to catch up.
-# XXX This should be more systematic.
-sleep 2
+ovn-nbctl --wait=hv sync
 
 ip_to_hex() {
     printf "%02x%02x%02x%02x" "$@"
@@ -8885,6 +8884,8 @@ grep actions=mod_dl_dst:f0:00:00:01:02:04 | wc -l` -eq 1
         as $backup_gw reset_pcap_file br-phys_n1 $backup_gw/br-phys_n1
     fi
     as ext1 reset_pcap_file ext1-vif1 ext1/vif1
+
+    sleep 1
 
     # Resend packet from foo1 to outside1
     as hv1 ovs-appctl netdev-dummy/receive hv1-vif1 $packet
@@ -9268,9 +9269,8 @@ as hv1 ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
 as hv3 ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
 
 
-# Allow some time for ovn-northd and ovn-controller to catch up.
-# XXX This should be more systematic.
-sleep 2
+dnl Allow some time for ovn-northd and ovn-controller to catch up.
+ovn-nbctl --wait=hv sync
 
 echo "---------NB dump-----"
 ovn-nbctl show
@@ -9384,6 +9384,9 @@ as hv2 ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
 # Wait until the patch ports are created in hv2 to connect br-int to br-phys
 OVS_WAIT_UNTIL([test 1 = `as hv2 ovs-vsctl show | \
 grep "Port patch-br-int-to-ln-alice" | wc -l`])
+
+dnl Allow some time for ovn-controller to catch up.
+ovn-nbctl --wait=hv sync
 
 # ARP for router IP address from outside1
 test_arp 3 1 f00000010204 $outside_ip $rtr_ip 000002010203
