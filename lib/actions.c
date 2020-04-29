@@ -319,11 +319,7 @@ parse_NEXT(struct action_context *ctx)
         }
     }
 
-    if (pipeline == OVNACT_P_EGRESS && ctx->pp->pipeline == OVNACT_P_INGRESS) {
-        lexer_error(ctx->lexer,
-                    "\"next\" action cannot advance from ingress to egress "
-                    "pipeline (use \"output\" action instead)");
-    } else if (table >= ctx->pp->n_tables) {
+    if (table >= ctx->pp->n_tables) {
         lexer_error(ctx->lexer,
                     "\"next\" action cannot advance beyond table %d.",
                     ctx->pp->n_tables - 1);
@@ -2851,12 +2847,13 @@ encode_SET_METER(const struct ovnact_set_meter *cl,
      * describes the meter itself. */
     char *name;
     if (cl->burst) {
-        name = xasprintf("__string: kbps burst stats bands=type=drop "
-                         "rate=%"PRId64" burst_size=%"PRId64"", cl->rate,
-                         cl->burst);
+        name = xasprintf("__string: uuid "UUID_FMT" kbps burst stats "
+                         "bands=type=drop rate=%"PRId64" burst_size=%"PRId64,
+                         UUID_ARGS(&ep->lflow_uuid), cl->rate, cl->burst);
     } else {
-        name = xasprintf("__string: kbps stats bands=type=drop "
-                         "rate=%"PRId64"", cl->rate);
+        name = xasprintf("__string: uuid "UUID_FMT" kbps stats "
+                         "bands=type=drop rate=%"PRId64,
+                         UUID_ARGS(&ep->lflow_uuid), cl->rate);
     }
 
     table_id = ovn_extend_table_assign_id(ep->meter_table, name,

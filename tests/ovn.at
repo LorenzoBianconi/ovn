@@ -852,7 +852,11 @@ next(pipeline=ingress, table=11);
     encodes as resubmit(,19)
 
 next(pipeline=egress);
-    "next" action cannot advance from ingress to egress pipeline (use "output" action instead)
+    formats as next(pipeline=egress, table=11);
+    encodes as resubmit(,51)
+
+next(pipeline=egress, table=5);
+    encodes as resubmit(,45)
 
 next(table=10);
     formats as next(10);
@@ -7676,6 +7680,16 @@ AT_CHECK([as hv ovn-nbctl qos-list lsw0 | wc -l], [0], [1
 AT_CHECK([as hv ovs-ofctl dump-flows br-int -O OpenFlow13 | grep meter | wc -l], [0], [0
 ])
 AT_CHECK([as hv ovs-ofctl dump-meters br-int -O OpenFlow13 | grep rate=11123 | wc -l], [0], [0
+])
+
+# Check multiple qos meters
+ovn-nbctl qos-del lsw0
+ovn-nbctl qos-add lsw0 to-lport 1001 'inport=="lp1" && is_chassis_resident("lp1")' rate=100000 burst=100000
+ovn-nbctl qos-add lsw0 to-lport 1001 'inport=="lp2" && is_chassis_resident("lp2")' rate=100000 burst=100000
+ovn-nbctl qos-add lsw0 to-lport 1002 'inport=="lp1" && is_chassis_resident("lp1")' rate=100001 burst=100001
+ovn-nbctl qos-add lsw0 to-lport 1002 'inport=="lp2" && is_chassis_resident("lp2")' rate=100001 burst=100001
+
+AT_CHECK([as hv ovs-ofctl dump-meters br-int -O OpenFlow13 | grep meter | wc -l], [0], [4
 ])
 
 OVN_CLEANUP([hv])
