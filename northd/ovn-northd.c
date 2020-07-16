@@ -6989,83 +6989,16 @@ build_lswitch_flows_step_90_op(
 }
 
 static void
-build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *port_groups, struct hmap *lflows,
-                    struct hmap *mcgroups, struct hmap *igmp_groups,
-                    struct shash *meter_groups,
-                    struct hmap *lbs)
+build_lswitch_flows_step_100_od(
+        struct ovn_datapath *od, struct hmap *lflows)
 {
-    /* This flow table structure is documented in ovn-northd(8), so please
-     * update ovn-northd.8.xml if you change anything. */
-
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
-
-    struct ovn_datapath *od;
-    struct ovn_port *op;
-    struct ovn_lb *lb;
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_0_od(
-                od, lflows, meter_groups, lbs, port_groups);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_10_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_20_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_30_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_30_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_40_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_50_op(op, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_50_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (lb, hmap_node, lbs) {
-        build_lswitch_flows_step_50_lb(lb, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_60_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_70_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_80_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_90_op(op, lflows);
-    }
-
-    char *svc_check_match = xasprintf("eth.dst == %s", svc_monitor_mac);
     /* Ingress table 19: Destination lookup, broadcast and multicast handling
      * (priority 70 - 100). */
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs) {
-            continue;
-        }
+    if (od->nbs) {
+        struct ds actions = DS_EMPTY_INITIALIZER;
+        struct ds match = DS_EMPTY_INITIALIZER;
 
+        char *svc_check_match = xasprintf("eth.dst == %s", svc_monitor_mac);
         ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_LKUP, 110, svc_check_match,
                       "handle_svc_check(inport);");
 
@@ -7138,8 +7071,87 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
 
         ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_LKUP, 70, "eth.mcast",
                       "outport = \""MC_FLOOD"\"; output;");
+        free(svc_check_match);
+
+        ds_destroy(&actions);
+        ds_destroy(&match);
     }
-    free(svc_check_match);
+}
+
+static void
+build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
+                    struct hmap *port_groups, struct hmap *lflows,
+                    struct hmap *mcgroups, struct hmap *igmp_groups,
+                    struct shash *meter_groups,
+                    struct hmap *lbs)
+{
+    /* This flow table structure is documented in ovn-northd(8), so please
+     * update ovn-northd.8.xml if you change anything. */
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    struct ovn_datapath *od;
+    struct ovn_port *op;
+    struct ovn_lb *lb;
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_0_od(
+                od, lflows, meter_groups, lbs, port_groups);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_10_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_20_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_30_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_30_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_40_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_50_op(op, lflows, ports);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_50_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (lb, hmap_node, lbs) {
+        build_lswitch_flows_step_50_lb(lb, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_60_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_70_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_80_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_90_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_100_od(od, lflows);
+    }
+
 
     /* Ingress table 19: Add IP multicast flows learnt from IGMP/MLD
      * (priority 90). */
