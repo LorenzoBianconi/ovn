@@ -9846,6 +9846,60 @@ build_lrouter_flows_step_50_op(struct ovn_port *op, struct hmap *lflows)
 }
 
 static void
+build_lrouter_flows_step_60_od(struct ovn_datapath *od, struct hmap *lflows)
+{
+    /* Logical router ingress table ND_RA_OPTIONS & ND_RA_RESPONSE: RS
+     * responder, by default goto next. (priority 0)*/
+    if (od->nbr) {
+        ovn_lflow_add(lflows, od, S_ROUTER_IN_ND_RA_OPTIONS, 0, "1", "next;");
+        ovn_lflow_add(lflows, od, S_ROUTER_IN_ND_RA_RESPONSE, 0, "1", "next;");
+    }
+}
+
+static void
+build_lrouter_flows_step_70_op(struct ovn_port *op, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    /* Logical router ingress table IP_ROUTING & IP_ROUTING_ECMP: IP Routing.
+     *
+     * A packet that arrives at this table is an IP packet that should be
+     * routed to the address in 'ip[46].dst'.
+     *
+     * For regular routes without ECMP, table IP_ROUTING sets outport to the
+     * correct output port, eth.src to the output port's MAC address, and
+     * REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 to the next-hop IP address
+     * (leaving 'ip[46].dst', the packet’s final destination, unchanged), and
+     * advances to the next table.
+     *
+     * For ECMP routes, i.e. multiple routes with same policy and prefix, table
+     * IP_ROUTING remembers ECMP group id and selects a member id, and advances
+     * to table IP_ROUTING_ECMP, which sets outport, eth.src and
+     * REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 for the selected ECMP member.
+     */
+
+     if (op->nbrp) {
+
+        for (int i = 0; i < op->lrp_networks.n_ipv4_addrs; i++) {
+            add_route(lflows, op, op->lrp_networks.ipv4_addrs[i].addr_s,
+                      op->lrp_networks.ipv4_addrs[i].network_s,
+                      op->lrp_networks.ipv4_addrs[i].plen, NULL, false,
+                      &op->nbrp->header_);
+        }
+
+        for (int i = 0; i < op->lrp_networks.n_ipv6_addrs; i++) {
+            add_route(lflows, op, op->lrp_networks.ipv6_addrs[i].addr_s,
+                      op->lrp_networks.ipv6_addrs[i].network_s,
+                      op->lrp_networks.ipv6_addrs[i].plen, NULL, false,
+                      &op->nbrp->header_);
+        }
+    }
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *lflows, struct shash *meter_groups,
                     struct hmap *lbs)
@@ -9898,51 +9952,12 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         build_lrouter_flows_step_50_op(op, lflows);
     }
 
-    /* Logical router ingress table ND_RA_OPTIONS & ND_RA_RESPONSE: RS
-     * responder, by default goto next. (priority 0)*/
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
-
-        ovn_lflow_add(lflows, od, S_ROUTER_IN_ND_RA_OPTIONS, 0, "1", "next;");
-        ovn_lflow_add(lflows, od, S_ROUTER_IN_ND_RA_RESPONSE, 0, "1", "next;");
+        build_lrouter_flows_step_60_od(od, lflows);
     }
 
-    /* Logical router ingress table IP_ROUTING & IP_ROUTING_ECMP: IP Routing.
-     *
-     * A packet that arrives at this table is an IP packet that should be
-     * routed to the address in 'ip[46].dst'.
-     *
-     * For regular routes without ECMP, table IP_ROUTING sets outport to the
-     * correct output port, eth.src to the output port's MAC address, and
-     * REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 to the next-hop IP address
-     * (leaving 'ip[46].dst', the packet’s final destination, unchanged), and
-     * advances to the next table.
-     *
-     * For ECMP routes, i.e. multiple routes with same policy and prefix, table
-     * IP_ROUTING remembers ECMP group id and selects a member id, and advances
-     * to table IP_ROUTING_ECMP, which sets outport, eth.src and
-     * REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 for the selected ECMP member.
-     */
     HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbrp) {
-            continue;
-        }
-
-        for (int i = 0; i < op->lrp_networks.n_ipv4_addrs; i++) {
-            add_route(lflows, op, op->lrp_networks.ipv4_addrs[i].addr_s,
-                      op->lrp_networks.ipv4_addrs[i].network_s,
-                      op->lrp_networks.ipv4_addrs[i].plen, NULL, false,
-                      &op->nbrp->header_);
-        }
-
-        for (int i = 0; i < op->lrp_networks.n_ipv6_addrs; i++) {
-            add_route(lflows, op, op->lrp_networks.ipv6_addrs[i].addr_s,
-                      op->lrp_networks.ipv6_addrs[i].network_s,
-                      op->lrp_networks.ipv6_addrs[i].plen, NULL, false,
-                      &op->nbrp->header_);
-        }
+        build_lrouter_flows_step_70_op(op, lflows);
     }
 
     /* Convert the static routes to flows. */
