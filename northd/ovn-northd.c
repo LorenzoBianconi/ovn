@@ -47,6 +47,7 @@
 #include "unixctl.h"
 #include "util.h"
 #include "uuid.h"
+#include "fasthmap.h"
 #include "openvswitch/vlog.h"
 
 VLOG_DEFINE_THIS_MODULE(ovn_northd);
@@ -4109,7 +4110,7 @@ ovn_lflow_add_at(struct hmap *lflow_map, struct ovn_datapath *od,
     ovn_lflow_init(lflow, od, stage, priority,
                    xstrdup(match), xstrdup(actions),
                    ovn_lflow_hint(stage_hint), where);
-    hmap_insert(lflow_map, &lflow->hmap_node, ovn_lflow_hash(lflow));
+    hmap_insert_fast(lflow_map, &lflow->hmap_node, ovn_lflow_hash(lflow));
 }
 
 /* Adds a row with the specified contents to the Logical_Flow table. */
@@ -10860,6 +10861,133 @@ build_lrouter_flows_step_170_op(
     ds_destroy(&actions);
 }
 
+
+struct lrouter_flow_build_info {
+    struct hmap *datapaths;
+    struct hmap *ports;
+    struct hmap *lflows;
+    struct shash *meter_groups;
+    struct hmap *lbs;
+};
+
+
+struct lrouter_thread_pool {
+    struct worker_pool *pool;
+};
+
+static void build_router_flows_od_helper(
+        struct ovn_datapath *od,
+        struct hmap *lflows, 
+        struct hmap *lbs,
+        struct hmap *ports,
+        struct shash *meter_groups)
+{
+    build_lrouter_flows_step_0_od(od, lflows);
+    build_lrouter_flows_step_10_od(od, lflows);
+    build_lrouter_flows_step_20_od(od, lflows);
+    build_lrouter_flows_step_50_od(od, lflows, lbs, meter_groups);
+    build_lrouter_flows_step_60_od(od, lflows);
+    build_lrouter_flows_step_80_od(od, lflows, ports);
+    build_lrouter_flows_step_90_od(od, lflows);
+    build_lrouter_flows_step_100_od(od, lflows, ports);
+    build_lrouter_flows_step_110_od(od, lflows);
+    build_lrouter_flows_step_130_od(od, lflows);
+    build_lrouter_flows_step_140_od(od, lflows, ports);
+    build_lrouter_flows_step_150_od(od, lflows);
+    build_lrouter_flows_step_160_od(od, lflows);
+}
+
+static void build_router_flows_op_helper(
+        struct ovn_port *op, struct hmap *lflows, struct hmap *ports)
+{
+    build_lrouter_flows_step_0_op(op, lflows);
+    build_lrouter_flows_step_10_op(op, lflows);
+    build_lrouter_flows_step_20_op(op, lflows);
+    build_lrouter_flows_step_30_op(op, lflows);
+    build_lrouter_flows_step_40_op(op, lflows);
+    build_lrouter_flows_step_50_op(op, lflows);
+    build_lrouter_flows_step_70_op(op, lflows);
+    build_lrouter_flows_step_120_op(op, lflows, ports);
+    build_lrouter_flows_step_170_op(op, lflows);
+}
+
+static void *build_lrouter_flows_thread(void *arg) {
+    struct worker_control *control = (struct worker_control *) arg;
+    struct lrouter_thread_pool *workload;
+    struct lrouter_flow_build_info *lfbi;
+    struct ovn_datapath *od;
+    struct ovn_port *op;
+    int bnum;
+
+    while (!seize_fire()) {
+        sem_wait(&control->fire);
+        workload = (struct lrouter_thread_pool *) control->workload;
+        lfbi = (struct lrouter_flow_build_info *) control->data;
+        if (lfbi && workload) {
+            for (bnum = control->id;
+                    bnum <= lfbi->datapaths->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        od, key_node, bnum, lfbi->datapaths) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+                    build_router_flows_od_helper(
+                            od,
+                            lfbi->lflows, 
+                            lfbi->lbs,
+                            lfbi->ports,
+                            lfbi->meter_groups);
+                }
+            }
+            for (bnum = control->id;
+                    bnum <= lfbi->ports->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        op, key_node, bnum, lfbi->ports) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+
+                    build_router_flows_op_helper(
+                            op,
+                            lfbi->lflows,
+                            lfbi->ports);
+                }
+            }
+            atomic_store_relaxed(&control->finished, true);
+            atomic_thread_fence(memory_order_release);
+        }
+        sem_post(control->done);
+    }
+    return NULL;
+}
+
+
+static struct lrouter_thread_pool *lrouter_pool = NULL;
+
+static void init_lrouter_thread_pool(void) {
+
+    int index;
+
+    if (!lrouter_pool) {
+        lrouter_pool =
+            xmalloc(sizeof(struct lrouter_thread_pool));
+        lrouter_pool->pool =
+            add_worker_pool(build_lrouter_flows_thread);
+
+        for (index = 0; index < lrouter_pool->pool->size; index++) {
+            lrouter_pool->pool->controls[index].workload =
+                lrouter_pool;
+        }
+    }
+}
+
+#define OD_CUTOFF 1
+#define OP_CUTOFF 1
+
 static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *lflows, struct shash *meter_groups,
@@ -10868,96 +10996,52 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
     /* This flow table structure is documented in ovn-northd(8), so please
      * update ovn-northd.8.xml if you change anything. */
 
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_0_od(od, lflows);
-    }
+    if (hmap_count(datapaths) > OD_CUTOFF || hmap_count(ports) > OP_CUTOFF) {
+        struct hmap *lflow_segs;
+        struct lrouter_flow_build_info *lfbi;
+        int index;
+        init_lrouter_thread_pool();
 
-    struct ovn_port *op;
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_0_op(op, lflows);
-    }
+        lfbi = xmalloc(
+            sizeof(struct lrouter_flow_build_info) * lrouter_pool->pool->size);
+        lflow_segs = xmalloc(
+            sizeof(struct hmap) * lrouter_pool->pool->size);
 
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_10_od(od, lflows);
-    }
+        for (index = 0; index < lrouter_pool->pool->size; index++) {
+            lfbi[index].datapaths = datapaths;
+            lfbi[index].ports = ports;
+            lfbi[index].meter_groups = meter_groups;
+            lfbi[index].lbs = lbs;
+            fast_hmap_init(&lflow_segs[index], lflows->mask);
+            lfbi[index].lflows = &lflow_segs[index];
+            lrouter_pool->pool->controls[index].data = &lfbi[index];
+        }
+        run_pool_hash(lrouter_pool->pool, lflows, lflow_segs);
+        free(lflow_segs);
+        free(lfbi);
+    } else {
+        struct ovn_datapath *od;
+        struct ovn_port *op;
 
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_10_op(op, lflows);
+        HMAP_FOR_EACH (od, key_node, datapaths) {
+            build_router_flows_od_helper(
+                    od,
+                    lflows, 
+                    lbs,
+                    ports,
+                    meter_groups);
+        }
+        HMAP_FOR_EACH (op, key_node, ports) {
+            build_router_flows_op_helper(
+                    op,
+                    lflows,
+                    ports);
+        }
     }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_20_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_20_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_30_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_40_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_50_od(od, lflows, lbs, meter_groups);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_50_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_60_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_70_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_80_od(od, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_90_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_100_od(od, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_110_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_120_op(op, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_130_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_140_od(od, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_150_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_160_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_170_op(op, lflows);
-    }
+ 
 }
+ 
+static ssize_t max_seen_lflow_size = 128;
 
 /* Updates the Logical_Flow and Multicast_Group tables in the OVN_SB database,
  * constructing their contents based on the OVN_NB database. */
@@ -10968,11 +11052,17 @@ build_lflows(struct northd_context *ctx, struct hmap *datapaths,
              struct shash *meter_groups,
              struct hmap *lbs)
 {
-    struct hmap lflows = HMAP_INITIALIZER(&lflows);
+    struct hmap lflows;
+
+    fast_hmap_size_for(&lflows, max_seen_lflow_size);
 
     build_lswitch_flows(datapaths, ports, port_groups, &lflows, mcgroups,
                         igmp_groups, meter_groups, lbs);
     build_lrouter_flows(datapaths, ports, &lflows, meter_groups, lbs);
+
+    if (hmap_count(&lflows) > max_seen_lflow_size) {
+        max_seen_lflow_size = hmap_count(&lflows);
+    }
 
     /* Push changes to the Logical_Flow table to database. */
     const struct sbrec_logical_flow *sbflow, *next_sbflow;
