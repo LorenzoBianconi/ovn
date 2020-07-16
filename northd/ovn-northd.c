@@ -10018,6 +10018,35 @@ build_lrouter_flows_step_90_od(struct ovn_datapath *od, struct hmap *lflows)
 }
 
 static void
+build_lrouter_flows_step_100_od(
+        struct ovn_datapath *od, struct hmap *lflows, struct hmap *ports)
+{
+
+    /* Logical router ingress table POLICY: Policy.
+     *
+     * A packet that arrives at this table is an IP packet that should be
+     * permitted/denied/rerouted to the address in the rule's nexthop.
+     * This table sets outport to the correct out_port,
+     * eth.src to the output port's MAC address,
+     * and REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 to the next-hop IP address
+     * (leaving 'ip[46].dst', the packet’s final destination, unchanged), and
+     * advances to the next table for ARP/ND resolution. */
+
+    if (od->nbr) {
+        /* This is a catch-all rule. It has the lowest priority (0)
+         * does a match-all("1") and pass-through (next) */
+        ovn_lflow_add(lflows, od, S_ROUTER_IN_POLICY, 0, "1", "next;");
+
+        /* Convert routing policies to flows. */
+        for (int i = 0; i < od->nbr->n_policies; i++) {
+            const struct nbrec_logical_router_policy *rule
+                = od->nbr->policies[i];
+            build_routing_policy_flow(lflows, od, ports, rule, &rule->header_);
+        }
+    }
+}
+
+static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *lflows, struct shash *meter_groups,
                     struct hmap *lbs)
@@ -10086,29 +10115,8 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         build_lrouter_flows_step_90_od(od, lflows);
     }
 
-    /* Logical router ingress table POLICY: Policy.
-     *
-     * A packet that arrives at this table is an IP packet that should be
-     * permitted/denied/rerouted to the address in the rule's nexthop.
-     * This table sets outport to the correct out_port,
-     * eth.src to the output port's MAC address,
-     * and REG_NEXT_HOP_IPV4/REG_NEXT_HOP_IPV6 to the next-hop IP address
-     * (leaving 'ip[46].dst', the packet’s final destination, unchanged), and
-     * advances to the next table for ARP/ND resolution. */
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
-        /* This is a catch-all rule. It has the lowest priority (0)
-         * does a match-all("1") and pass-through (next) */
-        ovn_lflow_add(lflows, od, S_ROUTER_IN_POLICY, 0, "1", "next;");
-
-        /* Convert routing policies to flows. */
-        for (int i = 0; i < od->nbr->n_policies; i++) {
-            const struct nbrec_logical_router_policy *rule
-                = od->nbr->policies[i];
-            build_routing_policy_flow(lflows, od, ports, rule, &rule->header_);
-        }
+        build_lrouter_flows_step_100_od(od, lflows, ports);
     }
 
 
