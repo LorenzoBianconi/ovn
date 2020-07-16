@@ -7390,6 +7390,8 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         if (!od->nbs) {
             continue;
         }
+        /* Has unknown is modified earlier, this canot be parallelized
+         * so leaving it in the main function body */
         if (od->has_unknown) {
             ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_LKUP, 0, "1",
                           "outport = \""MC_UNKNOWN"\"; output;");
