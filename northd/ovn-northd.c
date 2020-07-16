@@ -10552,6 +10552,51 @@ build_lrouter_flows_step_140_od(
 }
 
 static void
+build_lrouter_flows_step_150_od(
+        struct ovn_datapath *od, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    /* Logical router ingress table GW_REDIRECT: Gateway redirect.
+     *
+     * For traffic with outport equal to the l3dgw_port
+     * on a distributed router, this table redirects a subset
+     * of the traffic to the l3redirect_port which represents
+     * the central instance of the l3dgw_port.
+     */
+    if (od->nbr) {
+        if (od->l3dgw_port && od->l3redirect_port) {
+            const struct ovsdb_idl_row *stage_hint = NULL;
+
+            if (od->l3dgw_port->nbrp) {
+                stage_hint = &od->l3dgw_port->nbrp->header_;
+            }
+
+            /* For traffic with outport == l3dgw_port, if the
+             * packet did not match any higher priority redirect
+             * rule, then the traffic is redirected to the central
+             * instance of the l3dgw_port. */
+            ds_clear(&match);
+            ds_put_format(&match, "outport == %s",
+                          od->l3dgw_port->json_key);
+            ds_clear(&actions);
+            ds_put_format(&actions, "outport = %s; next;",
+                          od->l3redirect_port->json_key);
+            ovn_lflow_add_with_hint(lflows, od, S_ROUTER_IN_GW_REDIRECT, 50,
+                                    ds_cstr(&match), ds_cstr(&actions),
+                                    stage_hint);
+        }
+
+        /* Packets are allowed by default. */
+        ovn_lflow_add(lflows, od, S_ROUTER_IN_GW_REDIRECT, 0, "1", "next;");
+    }
+
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *lflows, struct shash *meter_groups,
                     struct hmap *lbs)
@@ -10640,41 +10685,8 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         build_lrouter_flows_step_140_od(od, lflows, ports);
     }
 
-    /* Logical router ingress table GW_REDIRECT: Gateway redirect.
-     *
-     * For traffic with outport equal to the l3dgw_port
-     * on a distributed router, this table redirects a subset
-     * of the traffic to the l3redirect_port which represents
-     * the central instance of the l3dgw_port.
-     */
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
-        if (od->l3dgw_port && od->l3redirect_port) {
-            const struct ovsdb_idl_row *stage_hint = NULL;
-
-            if (od->l3dgw_port->nbrp) {
-                stage_hint = &od->l3dgw_port->nbrp->header_;
-            }
-
-            /* For traffic with outport == l3dgw_port, if the
-             * packet did not match any higher priority redirect
-             * rule, then the traffic is redirected to the central
-             * instance of the l3dgw_port. */
-            ds_clear(&match);
-            ds_put_format(&match, "outport == %s",
-                          od->l3dgw_port->json_key);
-            ds_clear(&actions);
-            ds_put_format(&actions, "outport = %s; next;",
-                          od->l3redirect_port->json_key);
-            ovn_lflow_add_with_hint(lflows, od, S_ROUTER_IN_GW_REDIRECT, 50,
-                                    ds_cstr(&match), ds_cstr(&actions),
-                                    stage_hint);
-        }
-
-        /* Packets are allowed by default. */
-        ovn_lflow_add(lflows, od, S_ROUTER_IN_GW_REDIRECT, 0, "1", "next;");
+        build_lrouter_flows_step_150_od(od, lflows);
     }
 
     /* Local router ingress table ARP_REQUEST: ARP request.
