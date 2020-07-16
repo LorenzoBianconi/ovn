@@ -6558,6 +6558,25 @@ build_drop_arp_nd_flows_for_unbound_router_ports(struct ovn_port *op,
 }
 
 static void
+build_lswitch_flows_step_0_od(
+        struct ovn_datapath *od, struct hmap *lflows,
+        struct shash *meter_groups, struct hmap *lbs,
+        struct hmap *port_groups)
+{
+    /* Build pre-ACL and ACL tables for both ingress and egress.
+     * Ingress tables 3 through 10.  Egress tables 0 through 7. */
+    if (od->nbs) {
+        build_pre_acls(od, lflows);
+        build_pre_lb(od, lflows, meter_groups, lbs);
+        build_pre_stateful(od, lflows);
+        build_acls(od, lflows, port_groups);
+        build_qos(od, lflows);
+        build_lb(od, lflows);
+        build_stateful(od, lflows, lbs);
+    }
+}
+
+static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
                     struct hmap *mcgroups, struct hmap *igmp_groups,
@@ -6570,21 +6589,10 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
     struct ds match = DS_EMPTY_INITIALIZER;
     struct ds actions = DS_EMPTY_INITIALIZER;
 
-    /* Build pre-ACL and ACL tables for both ingress and egress.
-     * Ingress tables 3 through 10.  Egress tables 0 through 7. */
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs) {
-            continue;
-        }
-
-        build_pre_acls(od, lflows);
-        build_pre_lb(od, lflows, meter_groups, lbs);
-        build_pre_stateful(od, lflows);
-        build_acls(od, lflows, port_groups);
-        build_qos(od, lflows);
-        build_lb(od, lflows);
-        build_stateful(od, lflows, lbs);
+        build_lswitch_flows_step_0_od(
+                od, lflows, meter_groups, lbs, port_groups);
     }
 
     /* Build logical flows for the forwarding groups */
