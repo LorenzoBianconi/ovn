@@ -7150,6 +7150,8 @@ build_lswitch_flows_step_110_igmp(
     }
 }
 
+static struct ovs_mutex mcgroups_lock = OVS_MUTEX_INITIALIZER;
+
 static void
 build_lswitch_flows_step_120_op(
         struct ovn_port *op, struct hmap *lflows, struct hmap *mcgroups)
@@ -7191,7 +7193,9 @@ build_lswitch_flows_step_120_op(
                                     &op->nbsp->header_);
         } else if (!strcmp(op->nbsp->addresses[i], "unknown")) {
             if (lsp_is_enabled(op->nbsp)) {
+                ovs_mutex_lock(&mcgroups_lock);
                 ovn_multicast_add(mcgroups, &mc_unknown, op);
+                ovs_mutex_unlock(&mcgroups_lock);
                 op->od->has_unknown = true;
             }
         } else if (is_dynamic_lsp_address(op->nbsp->addresses[i])) {
@@ -7295,6 +7299,170 @@ build_lswitch_flows_step_120_op(
     ds_destroy(&match);
 }
 
+#define OD_CUTOFF 1
+#define OP_CUTOFF 1
+
+struct lswitch_flow_build_info {
+    struct hmap *datapaths;
+    struct hmap *ports;
+    struct hmap *port_groups;
+    struct hmap *lflows;
+    struct hmap *mcgroups;
+    struct hmap *igmp_groups;
+    struct shash *meter_groups;
+    struct hmap *lbs;
+};
+
+struct lswitch_thread_pool {
+    struct worker_pool *pool;
+};
+
+static void build_lswitch_od_helper(
+        struct ovn_datapath *od,
+        struct hmap *lflows,
+        struct hmap *port_groups, 
+        struct shash *meter_groups,
+        struct hmap *lbs)
+{
+    build_lswitch_flows_step_0_od(
+            od, lflows, meter_groups, lbs, port_groups);
+    build_lswitch_flows_step_10_od(od, lflows);
+    build_lswitch_flows_step_20_od(od, lflows);
+    build_lswitch_flows_step_30_od(od, lflows);
+    build_lswitch_flows_step_50_od(od, lflows);
+    build_lswitch_flows_step_70_od(od, lflows);
+    build_lswitch_flows_step_80_od(od, lflows);
+    build_lswitch_flows_step_100_od(od, lflows);
+    build_lswitch_output_port_sec_od(od, lflows);
+}
+
+static void build_lswitch_op_helper(
+        struct ovn_port *op,
+        struct hmap *lflows,
+        struct hmap *ports,
+        struct hmap *mcgroups)
+{
+    build_lswitch_flows_step_30_op(op, lflows);
+    build_lswitch_flows_step_40_op(op, lflows);
+    build_lswitch_flows_step_50_op(op, lflows, ports);
+    build_lswitch_flows_step_60_op(op, lflows);
+    build_lswitch_flows_step_90_op(op, lflows);
+    build_lswitch_flows_step_120_op(op, lflows, mcgroups);
+    build_lswitch_output_port_sec_op(op, lflows);
+}
+
+static void build_lswitch_lb_helper(
+    struct ovn_lb *lb,
+    struct hmap *lflows)
+{
+        build_lswitch_flows_step_50_lb(lb, lflows);
+}
+
+static void build_lswitch_igmp_helper(
+    struct ovn_igmp_group *igmp_group,
+    struct hmap *lflows)
+{
+        build_lswitch_flows_step_110_igmp(igmp_group, lflows);
+}
+
+static void *build_lswitch_flows_thread(void *arg) {
+    struct worker_control *control = (struct worker_control *) arg;
+    struct lswitch_thread_pool *workload;
+    struct lswitch_flow_build_info *lsi;
+    struct ovn_datapath *od;
+    struct ovn_port *op;
+    struct ovn_lb *lb;
+    struct ovn_igmp_group *igmp_group;
+    int bnum;
+
+    while (!seize_fire()) {
+        sem_wait(&control->fire);
+        workload = (struct lswitch_thread_pool *) control->workload;
+        lsi = (struct lswitch_flow_build_info *) control->data;
+        if (lsi && workload) {
+            for (bnum = control->id;
+                    bnum <= lsi->datapaths->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        od, key_node, bnum, lsi->datapaths) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+                build_lswitch_od_helper(
+                        od,
+                        lsi->lflows,
+                        lsi->port_groups, 
+                        lsi->meter_groups,
+                        lsi->lbs);
+                }
+            }
+            for (bnum = control->id;
+                    bnum <= lsi->ports->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        op, key_node, bnum, lsi->ports) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+                    build_lswitch_op_helper(op,
+                            lsi->lflows,
+                            lsi->ports,
+                            lsi->mcgroups);
+                }
+            }
+            for (bnum = control->id;
+                    bnum <= lsi->igmp_groups->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        igmp_group, hmap_node, bnum, lsi->igmp_groups) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+                    build_lswitch_igmp_helper(igmp_group, lsi->lflows);
+                }
+            }
+            for (bnum = control->id;
+                    bnum <= lsi->lbs->mask;
+                    bnum += workload->pool->size)
+            {
+                HMAP_FOR_EACH_IN_PARALLEL (
+                        lb, hmap_node, bnum, lsi->lbs) {
+                    if (seize_fire()) {
+                        return NULL;
+                    }
+                    build_lswitch_lb_helper(lb, lsi->lflows);
+                }
+            }
+            atomic_store_relaxed(&control->finished, true);
+            atomic_thread_fence(memory_order_release);
+        }
+        sem_post(control->done);
+    }
+    return NULL;
+}
+
+static struct lswitch_thread_pool *lswitch_pool = NULL;
+
+static void init_lswitch_pool(void) {
+
+    int index;
+
+    if (!lswitch_pool) {
+        lswitch_pool =
+            xmalloc(sizeof(struct lswitch_thread_pool));
+        lswitch_pool->pool =
+            add_worker_pool(build_lswitch_flows_thread);
+
+        for (index = 0; index < lswitch_pool->pool->size; index++) {
+            lswitch_pool->pool->controls[index].workload =
+                lswitch_pool;
+         }
+     }
+}
+
 static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
@@ -7305,77 +7473,60 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
     /* This flow table structure is documented in ovn-northd(8), so please
      * update ovn-northd.8.xml if you change anything. */
 
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
-
     struct ovn_datapath *od;
-    struct ovn_port *op;
-    struct ovn_lb *lb;
-    struct ovn_igmp_group *igmp_group;
 
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_0_od(
-                od, lflows, meter_groups, lbs, port_groups);
-    }
+    if (hmap_count(datapaths) > OD_CUTOFF || hmap_count(ports) > OP_CUTOFF) {
+        init_lswitch_pool();
+        int index;
+        struct lswitch_flow_build_info *lsi = xmalloc(
+            sizeof(struct lswitch_flow_build_info) *
+                lswitch_pool->pool->size);
+        struct hmap *lflow_segs = xmalloc(
+            sizeof(struct hmap) * lswitch_pool->pool->size);
 
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_10_od(od, lflows);
-    }
+        for (index = 0; index < lswitch_pool->pool->size; index++) {
+            lsi[index].datapaths = datapaths;
+            lsi[index].ports = ports;
+            lsi[index].port_groups = port_groups;
+            lsi[index].mcgroups = mcgroups;
+            lsi[index].igmp_groups = igmp_groups;
+            lsi[index].meter_groups = meter_groups;
+            lsi[index].lbs = lbs;
+            fast_hmap_init(&lflow_segs[index], lflows->mask);
+            lsi[index].lflows = &lflow_segs[index];
+            lswitch_pool->pool->controls[index].data = &lsi[index];
+        }
+        run_pool_hash(lswitch_pool->pool, lflows, lflow_segs);
+        free(lflow_segs);
+        free(lsi);
+    } else {
+        struct ovn_port *op;
+        struct ovn_lb *lb;
+        struct ovn_igmp_group *igmp_group;
 
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_20_od(od, lflows);
-    }
+        HMAP_FOR_EACH (od, key_node, datapaths) {
+            build_lswitch_od_helper(
+                    od,
+                    lflows,
+                    port_groups, 
+                    meter_groups,
+                    lbs);
+        }
 
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_30_op(op, lflows);
-    }
+        HMAP_FOR_EACH (op, key_node, ports) {
+            build_lswitch_op_helper(op,
+                    lflows,
+                    ports,
+                    mcgroups);
+        }
 
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_30_od(od, lflows);
-    }
+        HMAP_FOR_EACH (lb, hmap_node, lbs) {
+            build_lswitch_flows_step_50_lb(lb, lflows);
+        }
 
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_40_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_50_op(op, lflows, ports);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_50_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (lb, hmap_node, lbs) {
-        build_lswitch_flows_step_50_lb(lb, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_60_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_70_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_80_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_90_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_100_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (igmp_group, hmap_node, igmp_groups) {
-        build_lswitch_flows_step_110_igmp(igmp_group, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_120_op(op, lflows, mcgroups);
+        HMAP_FOR_EACH (igmp_group, hmap_node, igmp_groups) {
+            build_lswitch_flows_step_110_igmp(igmp_group, lflows);
+        }
     }
 
     /* Ingress table 19: Destination lookup for unknown MACs (priority 0). */
@@ -7390,17 +7541,6 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                           "outport = \""MC_UNKNOWN"\"; output;");
         }
     }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_output_port_sec_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_output_port_sec_od(od, lflows);
-    }
-
-    ds_destroy(&match);
-    ds_destroy(&actions);
 }
 
 /* Returns a string of the IP address of the router port 'op' that
@@ -10984,9 +11124,6 @@ static void init_lrouter_thread_pool(void) {
         }
     }
 }
-
-#define OD_CUTOFF 1
-#define OP_CUTOFF 1
 
 static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
