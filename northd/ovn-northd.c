@@ -7301,8 +7301,8 @@ build_lswitch_flows_step_120_op(
     ds_destroy(&match);
 }
 
-#define OD_CUTOFF 1
-#define OP_CUTOFF 1
+#define OD_CUTOFF 64
+#define OP_CUTOFF 4
 
 struct lswitch_flow_build_info {
     struct hmap *datapaths;
@@ -11292,7 +11292,7 @@ hmap_safe_remove(struct hmap *hmap, struct hmap_node *node, size_t hash)
     return false;
 }
 
-#define RECONCILE_CUTOFF 1
+#define RECONCILE_CUTOFF 1024
  
 static ssize_t max_seen_lflow_size = 128;
 
