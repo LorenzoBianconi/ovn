@@ -8266,7 +8266,7 @@ build_lrouter_nd_flow(struct ovn_datapath *od, struct ovn_port *op,
 }
 
 static void
-build_lrouter_flows_table_0_od(struct ovn_datapath *od, struct hmap *lflows)
+build_lrouter_flows_step_0_od(struct ovn_datapath *od, struct hmap *lflows)
 {
     /* Logical router ingress table 0: Admission control framework. */
     if (od->nbr) {
@@ -8278,7 +8278,7 @@ build_lrouter_flows_table_0_od(struct ovn_datapath *od, struct hmap *lflows)
 }
 
 static void
-build_lrouter_flows_table_0_op(struct ovn_port *op, struct hmap *lflows)
+build_lrouter_flows_step_0_op(struct ovn_port *op, struct hmap *lflows)
 {
     struct ds match = DS_EMPTY_INITIALIZER;
     struct ds actions = DS_EMPTY_INITIALIZER;
@@ -8322,32 +8322,12 @@ build_lrouter_flows_table_0_op(struct ovn_port *op, struct hmap *lflows)
 }
 
 static void
-build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *lflows, struct shash *meter_groups,
-                    struct hmap *lbs)
+build_lrouter_flows_step_10_od(struct ovn_datapath *od, struct hmap *lflows)
 {
-    /* This flow table structure is documented in ovn-northd(8), so please
-     * update ovn-northd.8.xml if you change anything. */
-
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
-
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_table_0_od(od, lflows);
-    }
-
-    struct ovn_port *op;
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_table_0_op(op, lflows);
-    }
-
     /* Logical router ingress table 1: LOOKUP_NEIGHBOR and
      * table 2: LEARN_NEIGHBOR. */
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
+
+    if (od->nbr) {
 
         /* Learn MAC bindings from ARP/IPv6 ND.
          *
@@ -8405,11 +8385,15 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         ovn_lflow_add(lflows, od, S_ROUTER_IN_LEARN_NEIGHBOR, 90,
                       "nd_ns", "put_nd(inport, ip6.src, nd.sll); next;");
     }
+}
 
-    HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbrp) {
-            continue;
-        }
+static void
+build_lrouter_flows_step_10_op(struct ovn_port *op, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    if (op->nbrp) {
 
         /* Check if we need to learn mac-binding from ARP requests. */
         for (int i = 0; i < op->lrp_networks.n_ipv4_addrs; i++) {
@@ -8431,6 +8415,39 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                     "lookup_arp(inport, arp.spa, arp.sha); "
                                     "next;", &op->nbrp->header_);
         }
+    }
+
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
+build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
+                    struct hmap *lflows, struct shash *meter_groups,
+                    struct hmap *lbs)
+{
+    /* This flow table structure is documented in ovn-northd(8), so please
+     * update ovn-northd.8.xml if you change anything. */
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    struct ovn_datapath *od;
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_0_od(od, lflows);
+    }
+
+    struct ovn_port *op;
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_0_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_10_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_10_op(op, lflows);
     }
 
     /* Logical router ingress table 3: IP Input. */
