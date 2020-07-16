@@ -6636,52 +6636,14 @@ build_lswitch_flows_step_40_op(struct ovn_port *op, struct hmap *lflows)
 }
 
 static void
-build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *port_groups, struct hmap *lflows,
-                    struct hmap *mcgroups, struct hmap *igmp_groups,
-                    struct shash *meter_groups,
-                    struct hmap *lbs)
+build_lswitch_flows_step_50_op(
+        struct ovn_port *op, struct hmap *lflows, struct hmap *ports)
 {
-    /* This flow table structure is documented in ovn-northd(8), so please
-     * update ovn-northd.8.xml if you change anything. */
-
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
-
-    struct ovn_datapath *od;
-    struct ovn_port *op;
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_0_od(
-                od, lflows, meter_groups, lbs, port_groups);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_10_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_20_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_30_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lswitch_flows_step_30_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lswitch_flows_step_40_op(op, lflows);
-    }
-
     /* Ingress table 13: ARP/ND responder, reply for known IPs.
      * (priority 50). */
-    HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbsp) {
-            continue;
-        }
+    if (op->nbsp) {
+        struct ds match = DS_EMPTY_INITIALIZER;
+        struct ds actions = DS_EMPTY_INITIALIZER;
 
         if (!strcmp(op->nbsp->type, "virtual")) {
             /* Handle
@@ -6698,7 +6660,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                                                    "virtual-parents");
             if (!virtual_ip || !virtual_parents ||
                 !ip_parse(virtual_ip, &ip)) {
-                continue;
+                return;
             }
 
             char *tokstr = xstrdup(virtual_parents);
@@ -6741,11 +6703,11 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
              */
             if (!lsp_is_up(op->nbsp) && strcmp(op->nbsp->type, "router") &&
                 strcmp(op->nbsp->type, "localport")) {
-                continue;
+                return;
             }
 
             if (lsp_is_external(op->nbsp) || op->has_unknown) {
-                continue;
+                return;
             }
 
             for (size_t i = 0; i < op->n_lsp_addrs; i++) {
@@ -6836,57 +6798,123 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                 }
             }
         }
+        ds_destroy(&actions);
+        ds_destroy(&match);
     }
+}
 
+static void
+build_lswitch_flows_step_50_od(
+        struct ovn_datapath *od, struct hmap *lflows)
+{
     /* Ingress table 13: ARP/ND responder, by default goto next.
      * (priority 0)*/
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs) {
-            continue;
-        }
-
+    if (od->nbs) {
         ovn_lflow_add(lflows, od, S_SWITCH_IN_ARP_ND_RSP, 0, "1", "next;");
     }
+}
+
+static void
+build_lswitch_flows_step_50_lb(
+        struct ovn_lb *lb, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
 
     /* Ingress table 13: ARP/ND responder for service monitor source ip.
      * (priority 110)*/
-    struct ovn_lb *lb;
-    HMAP_FOR_EACH (lb, hmap_node, lbs) {
-        for (size_t i = 0; i < lb->n_vips; i++) {
-            if (!lb->vips[i].health_check) {
+
+    for (size_t i = 0; i < lb->n_vips; i++) {
+        if (!lb->vips[i].health_check) {
+            continue;
+        }
+
+        for (size_t j = 0; j < lb->vips[i].n_backends; j++) {
+            if (!lb->vips[i].backends[j].op ||
+                !lb->vips[i].backends[j].svc_mon_src_ip) {
                 continue;
             }
 
-            for (size_t j = 0; j < lb->vips[i].n_backends; j++) {
-                if (!lb->vips[i].backends[j].op ||
-                    !lb->vips[i].backends[j].svc_mon_src_ip) {
-                    continue;
-                }
-
-                ds_clear(&match);
-                ds_put_format(&match, "arp.tpa == %s && arp.op == 1",
-                              lb->vips[i].backends[j].svc_mon_src_ip);
-                ds_clear(&actions);
-                ds_put_format(&actions,
-                    "eth.dst = eth.src; "
-                    "eth.src = %s; "
-                    "arp.op = 2; /* ARP reply */ "
-                    "arp.tha = arp.sha; "
-                    "arp.sha = %s; "
-                    "arp.tpa = arp.spa; "
-                    "arp.spa = %s; "
-                    "outport = inport; "
-                    "flags.loopback = 1; "
-                    "output;",
-                    svc_monitor_mac, svc_monitor_mac,
-                    lb->vips[i].backends[j].svc_mon_src_ip);
-                ovn_lflow_add_with_hint(lflows,
-                                        lb->vips[i].backends[j].op->od,
-                                        S_SWITCH_IN_ARP_ND_RSP, 110,
-                                        ds_cstr(&match), ds_cstr(&actions),
-                                        &lb->nlb->header_);
-            }
+            ds_clear(&match);
+            ds_put_format(&match, "arp.tpa == %s && arp.op == 1",
+                          lb->vips[i].backends[j].svc_mon_src_ip);
+            ds_clear(&actions);
+            ds_put_format(&actions,
+                "eth.dst = eth.src; "
+                "eth.src = %s; "
+                "arp.op = 2; /* ARP reply */ "
+                "arp.tha = arp.sha; "
+                "arp.sha = %s; "
+                "arp.tpa = arp.spa; "
+                "arp.spa = %s; "
+                "outport = inport; "
+                "flags.loopback = 1; "
+                "output;",
+                svc_monitor_mac, svc_monitor_mac,
+                lb->vips[i].backends[j].svc_mon_src_ip);
+            ovn_lflow_add_with_hint(lflows,
+                                    lb->vips[i].backends[j].op->od,
+                                    S_SWITCH_IN_ARP_ND_RSP, 110,
+                                    ds_cstr(&match), ds_cstr(&actions),
+                                    &lb->nlb->header_);
         }
+    }
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
+build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
+                    struct hmap *port_groups, struct hmap *lflows,
+                    struct hmap *mcgroups, struct hmap *igmp_groups,
+                    struct shash *meter_groups,
+                    struct hmap *lbs)
+{
+    /* This flow table structure is documented in ovn-northd(8), so please
+     * update ovn-northd.8.xml if you change anything. */
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    struct ovn_datapath *od;
+    struct ovn_port *op;
+    struct ovn_lb *lb;
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_0_od(
+                od, lflows, meter_groups, lbs, port_groups);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_10_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_20_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_30_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_30_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_40_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lswitch_flows_step_50_op(op, lflows, ports);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lswitch_flows_step_50_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (lb, hmap_node, lbs) {
+        build_lswitch_flows_step_50_lb(lb, lflows);
     }
 
 
