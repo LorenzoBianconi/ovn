@@ -6915,6 +6915,43 @@ build_lswitch_flows_step_60_op(
 }
 
 static void
+build_lswitch_flows_step_70_od(
+        struct ovn_datapath *od, struct hmap *lflows)
+{
+    /* Logical switch ingress table 17 and 18: DNS lookup and response
+     * priority 100 flows.
+     */
+    if (!od->nbs || !ls_has_dns_records(od->nbs)) {
+       return;
+    }
+
+    struct ds action = DS_EMPTY_INITIALIZER;
+    struct ds match = DS_EMPTY_INITIALIZER;
+
+    ds_clear(&match);
+    ds_put_cstr(&match, "udp.dst == 53");
+    ds_put_format(&action,
+                  REGBIT_DNS_LOOKUP_RESULT" = dns_lookup(); next;");
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_LOOKUP, 100,
+                  ds_cstr(&match), ds_cstr(&action));
+    ds_clear(&action);
+    ds_put_cstr(&match, " && "REGBIT_DNS_LOOKUP_RESULT);
+    ds_put_format(&action, "eth.dst <-> eth.src; ip4.src <-> ip4.dst; "
+                  "udp.dst = udp.src; udp.src = 53; outport = inport; "
+                  "flags.loopback = 1; output;");
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_RESPONSE, 100,
+                  ds_cstr(&match), ds_cstr(&action));
+    ds_clear(&action);
+    ds_put_format(&action, "eth.dst <-> eth.src; ip6.src <-> ip6.dst; "
+                  "udp.dst = udp.src; udp.src = 53; outport = inport; "
+                  "flags.loopback = 1; output;");
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_RESPONSE, 100,
+                  ds_cstr(&match), ds_cstr(&action));
+    ds_destroy(&action);
+    ds_destroy(&match);
+}
+
+static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
                     struct hmap *mcgroups, struct hmap *igmp_groups,
@@ -6972,36 +7009,8 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         build_lswitch_flows_step_60_op(op, lflows);
     }
 
-    /* Logical switch ingress table 17 and 18: DNS lookup and response
-     * priority 100 flows.
-     */
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs || !ls_has_dns_records(od->nbs)) {
-           continue;
-        }
-
-        struct ds action = DS_EMPTY_INITIALIZER;
-
-        ds_clear(&match);
-        ds_put_cstr(&match, "udp.dst == 53");
-        ds_put_format(&action,
-                      REGBIT_DNS_LOOKUP_RESULT" = dns_lookup(); next;");
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_LOOKUP, 100,
-                      ds_cstr(&match), ds_cstr(&action));
-        ds_clear(&action);
-        ds_put_cstr(&match, " && "REGBIT_DNS_LOOKUP_RESULT);
-        ds_put_format(&action, "eth.dst <-> eth.src; ip4.src <-> ip4.dst; "
-                      "udp.dst = udp.src; udp.src = 53; outport = inport; "
-                      "flags.loopback = 1; output;");
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_RESPONSE, 100,
-                      ds_cstr(&match), ds_cstr(&action));
-        ds_clear(&action);
-        ds_put_format(&action, "eth.dst <-> eth.src; ip6.src <-> ip6.dst; "
-                      "udp.dst = udp.src; udp.src = 53; outport = inport; "
-                      "flags.loopback = 1; output;");
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_DNS_RESPONSE, 100,
-                      ds_cstr(&match), ds_cstr(&action));
-        ds_destroy(&action);
+        build_lswitch_flows_step_70_od(od, lflows);
     }
 
     /* Ingress table 14 and 15: DHCP options and response, by default goto
