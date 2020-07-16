@@ -10670,6 +10670,63 @@ build_lrouter_flows_step_160_od(
     ds_destroy(&match);
     ds_destroy(&actions);
 }
+
+static void
+build_lrouter_flows_step_170_op(
+        struct ovn_port *op, struct hmap *lflows)
+{
+    /* Logical router egress table DELIVERY: Delivery (priority 100-110).
+     *
+     * Priority 100 rules deliver packets to enabled logical ports.
+     * Priority 110 rules match multicast packets and update the source
+     * mac before delivering to enabled logical ports. IP multicast traffic
+     * bypasses S_ROUTER_IN_IP_ROUTING route lookups.
+     */
+
+    if (!op->nbrp) {
+        return;
+    }
+
+    if (!lrport_is_enabled(op->nbrp)) {
+        /* Drop packets to disabled logical ports (since logical flow
+         * tables are default-drop). */
+        return;
+    }
+
+    if (op->derived) {
+        /* No egress packets should be processed in the context of
+         * a chassisredirect port.  The chassisredirect port should
+         * be replaced by the l3dgw port in the local output
+         * pipeline stage before egress processing. */
+        return;
+    }
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    /* If multicast relay is enabled then also adjust source mac for IP
+     * multicast traffic.
+     */
+    if (op->od->mcast_info.rtr.relay) {
+        ds_clear(&match);
+        ds_clear(&actions);
+        ds_put_format(&match, "(ip4.mcast || ip6.mcast) && outport == %s",
+                      op->json_key);
+        ds_put_format(&actions, "eth.src = %s; output;",
+                      op->lrp_networks.ea_s);
+        ovn_lflow_add(lflows, op->od, S_ROUTER_OUT_DELIVERY, 110,
+                      ds_cstr(&match), ds_cstr(&actions));
+    }
+
+    ds_clear(&match);
+    ds_put_format(&match, "outport == %s", op->json_key);
+    ovn_lflow_add(lflows, op->od, S_ROUTER_OUT_DELIVERY, 100,
+                  ds_cstr(&match), "output;");
+ 
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
 static void
 build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *lflows, struct shash *meter_groups,
@@ -10677,9 +10734,6 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
 {
     /* This flow table structure is documented in ovn-northd(8), so please
      * update ovn-northd.8.xml if you change anything. */
-
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
 
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, datapaths) {
@@ -10767,54 +10821,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         build_lrouter_flows_step_160_od(od, lflows);
     }
 
-    /* Logical router egress table DELIVERY: Delivery (priority 100-110).
-     *
-     * Priority 100 rules deliver packets to enabled logical ports.
-     * Priority 110 rules match multicast packets and update the source
-     * mac before delivering to enabled logical ports. IP multicast traffic
-     * bypasses S_ROUTER_IN_IP_ROUTING route lookups.
-     */
     HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbrp) {
-            continue;
-        }
-
-        if (!lrport_is_enabled(op->nbrp)) {
-            /* Drop packets to disabled logical ports (since logical flow
-             * tables are default-drop). */
-            continue;
-        }
-
-        if (op->derived) {
-            /* No egress packets should be processed in the context of
-             * a chassisredirect port.  The chassisredirect port should
-             * be replaced by the l3dgw port in the local output
-             * pipeline stage before egress processing. */
-            continue;
-        }
-
-        /* If multicast relay is enabled then also adjust source mac for IP
-         * multicast traffic.
-         */
-        if (op->od->mcast_info.rtr.relay) {
-            ds_clear(&match);
-            ds_clear(&actions);
-            ds_put_format(&match, "(ip4.mcast || ip6.mcast) && outport == %s",
-                          op->json_key);
-            ds_put_format(&actions, "eth.src = %s; output;",
-                          op->lrp_networks.ea_s);
-            ovn_lflow_add(lflows, op->od, S_ROUTER_OUT_DELIVERY, 110,
-                          ds_cstr(&match), ds_cstr(&actions));
-        }
-
-        ds_clear(&match);
-        ds_put_format(&match, "outport == %s", op->json_key);
-        ovn_lflow_add(lflows, op->od, S_ROUTER_OUT_DELIVERY, 100,
-                      ds_cstr(&match), "output;");
+        build_lrouter_flows_step_170_op(op, lflows);
     }
-
-    ds_destroy(&match);
-    ds_destroy(&actions);
 }
 
 /* Updates the Logical_Flow and Multicast_Group tables in the OVN_SB database,
