@@ -6577,6 +6577,36 @@ build_lswitch_flows_step_0_od(
 }
 
 static void
+build_lswitch_flows_step_10_od(struct ovn_datapath *od, struct hmap *lflows)
+{
+    /* Build logical flows for the forwarding groups */
+    if (!od->nbs || !od->nbs->n_forwarding_groups) {
+        return;
+    }
+    build_fwd_group_lflows(od, lflows);
+}
+
+static void
+build_lswitch_flows_step_20_od(struct ovn_datapath *od, struct hmap *lflows)
+{
+
+    /* Logical switch ingress table 0: Admission control framework (priority
+     * 100). */
+    if (od->nbs) {
+        /* Logical VLANs not supported. */
+        ovn_lflow_add(lflows, od, S_SWITCH_IN_PORT_SEC_L2, 100, "vlan.present",
+                      "drop;");
+
+        /* Broadcast/multicast source address is invalid. */
+        ovn_lflow_add(lflows, od, S_SWITCH_IN_PORT_SEC_L2, 100, "eth.src[40]",
+                      "drop;");
+
+        /* Port security flows have priority 50 (see below) and will continue
+         * to the next table if packet source is acceptable. */
+    }
+}
+
+static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
                     struct hmap *mcgroups, struct hmap *igmp_groups,
@@ -6595,32 +6625,12 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                 od, lflows, meter_groups, lbs, port_groups);
     }
 
-    /* Build logical flows for the forwarding groups */
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs || !od->nbs->n_forwarding_groups) {
-            continue;
-        }
-
-        build_fwd_group_lflows(od, lflows);
+        build_lswitch_flows_step_10_od(od, lflows);
     }
 
-    /* Logical switch ingress table 0: Admission control framework (priority
-     * 100). */
     HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbs) {
-            continue;
-        }
-
-        /* Logical VLANs not supported. */
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_PORT_SEC_L2, 100, "vlan.present",
-                      "drop;");
-
-        /* Broadcast/multicast source address is invalid. */
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_PORT_SEC_L2, 100, "eth.src[40]",
-                      "drop;");
-
-        /* Port security flows have priority 50 (see below) and will continue
-         * to the next table if packet source is acceptable. */
+        build_lswitch_flows_step_20_od(od, lflows);
     }
 
     build_lswitch_input_port_sec(ports, datapaths, lflows);
