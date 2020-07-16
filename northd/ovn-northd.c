@@ -6616,6 +6616,26 @@ build_lswitch_flows_step_30_od(struct ovn_datapath *od, struct hmap *lflows)
 }
 
 static void
+build_lswitch_flows_step_40_op(struct ovn_port *op, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+
+    /* Ingress table 13: ARP/ND responder, skip requests coming from localnet
+     * and vtep ports. (priority 100); see ovn-northd.8.xml for the
+     * rationale. */
+    if (op->nbsp) {
+        if ((!strcmp(op->nbsp->type, "localnet")) ||
+            (!strcmp(op->nbsp->type, "vtep"))) {
+            ds_put_format(&match, "inport == %s", op->json_key);
+            ovn_lflow_add_with_hint(lflows, op->od, S_SWITCH_IN_ARP_ND_RSP,
+                                    100, ds_cstr(&match), "next;",
+                                    &op->nbsp->header_);
+        }
+    }
+    ds_destroy(&match);
+}
+
+static void
 build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
                     struct hmap *port_groups, struct hmap *lflows,
                     struct hmap *mcgroups, struct hmap *igmp_groups,
@@ -6652,22 +6672,8 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         build_lswitch_flows_step_30_od(od, lflows);
     }
 
-    /* Ingress table 13: ARP/ND responder, skip requests coming from localnet
-     * and vtep ports. (priority 100); see ovn-northd.8.xml for the
-     * rationale. */
     HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbsp) {
-            continue;
-        }
-
-        if ((!strcmp(op->nbsp->type, "localnet")) ||
-            (!strcmp(op->nbsp->type, "vtep"))) {
-            ds_clear(&match);
-            ds_put_format(&match, "inport == %s", op->json_key);
-            ovn_lflow_add_with_hint(lflows, op->od, S_SWITCH_IN_ARP_ND_RSP,
-                                    100, ds_cstr(&match), "next;",
-                                    &op->nbsp->header_);
-        }
+        build_lswitch_flows_step_40_op(op, lflows);
     }
 
     /* Ingress table 13: ARP/ND responder, reply for known IPs.
