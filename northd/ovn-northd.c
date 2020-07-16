@@ -8266,57 +8266,38 @@ build_lrouter_nd_flow(struct ovn_datapath *od, struct ovn_port *op,
 }
 
 static void
-build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *lflows, struct shash *meter_groups,
-                    struct hmap *lbs)
+build_lrouter_flows_table_0_od(struct ovn_datapath *od, struct hmap *lflows)
 {
-    /* This flow table structure is documented in ovn-northd(8), so please
-     * update ovn-northd.8.xml if you change anything. */
-
-    struct ds match = DS_EMPTY_INITIALIZER;
-    struct ds actions = DS_EMPTY_INITIALIZER;
-
     /* Logical router ingress table 0: Admission control framework. */
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
-
+    if (od->nbr) {
         /* Logical VLANs not supported.
          * Broadcast/multicast source address is invalid. */
         ovn_lflow_add(lflows, od, S_ROUTER_IN_ADMISSION, 100,
                       "vlan.present || eth.src[40]", "drop;");
     }
+}
 
-    /* Logical router ingress table 0: match (priority 50). */
-    struct ovn_port *op;
-    HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbrp) {
-            continue;
-        }
+static void
+build_lrouter_flows_table_0_op(struct ovn_port *op, struct hmap *lflows)
+{
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
 
-        if (!lrport_is_enabled(op->nbrp)) {
-            /* Drop packets from disabled logical ports (since logical flow
-             * tables are default-drop). */
-            continue;
-        }
+    /* Logical router ingress table 0: match (priority 50).
+     * Drop packets from disabled logical ports (since logical flow
+     * tables are default-drop).
+     * No ingress packets should be received on a chassisredirect
+     * port. */
 
-        if (op->derived) {
-            /* No ingress packets should be received on a chassisredirect
-             * port. */
-            continue;
-        }
+    if (op->nbrp && lrport_is_enabled(op->nbrp) && (!op->derived)) {
 
         /* Store the ethernet address of the port receiving the packet.
          * This will save us from having to match on inport further down in
          * the pipeline.
          */
-        ds_clear(&actions);
         ds_put_format(&actions, REG_INPORT_ETH_ADDR " = %s; next;",
                       op->lrp_networks.ea_s);
 
-        ds_clear(&match);
         ds_put_format(&match, "eth.mcast && inport == %s", op->json_key);
         ovn_lflow_add_with_hint(lflows, op->od, S_ROUTER_IN_ADMISSION, 50,
                                 ds_cstr(&match), ds_cstr(&actions),
@@ -8335,6 +8316,30 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         ovn_lflow_add_with_hint(lflows, op->od, S_ROUTER_IN_ADMISSION, 50,
                                 ds_cstr(&match),  ds_cstr(&actions),
                                 &op->nbrp->header_);
+    }
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
+build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
+                    struct hmap *lflows, struct shash *meter_groups,
+                    struct hmap *lbs)
+{
+    /* This flow table structure is documented in ovn-northd(8), so please
+     * update ovn-northd.8.xml if you change anything. */
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    struct ovn_datapath *od;
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_table_0_od(od, lflows);
+    }
+
+    struct ovn_port *op;
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_table_0_op(op, lflows);
     }
 
     /* Logical router ingress table 1: LOOKUP_NEIGHBOR and
