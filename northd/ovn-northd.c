@@ -8821,6 +8821,8 @@ build_lrouter_flows_step_20_op(struct ovn_port *op, struct hmap *lflows)
          * ETH address.
          */
         if (op != op->od->l3dgw_port) {
+            ds_destroy(&match);
+            ds_destroy(&actions);
             return;
         }
 
@@ -9066,56 +9068,15 @@ build_lrouter_flows_step_40_op(struct ovn_port *op, struct hmap *lflows)
 }
 
 static void
-build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
-                    struct hmap *lflows, struct shash *meter_groups,
-                    struct hmap *lbs)
+build_lrouter_flows_step_50_od(
+        struct ovn_datapath *od, struct hmap *lflows,
+        struct hmap *lbs, struct shash *meter_groups)
 {
-    /* This flow table structure is documented in ovn-northd(8), so please
-     * update ovn-northd.8.xml if you change anything. */
-
     struct ds match = DS_EMPTY_INITIALIZER;
     struct ds actions = DS_EMPTY_INITIALIZER;
 
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_0_od(od, lflows);
-    }
-
-    struct ovn_port *op;
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_0_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_10_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_10_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        build_lrouter_flows_step_20_od(od, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_20_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_30_op(op, lflows);
-    }
-
-    HMAP_FOR_EACH (op, key_node, ports) {
-        build_lrouter_flows_step_40_op(op, lflows);
-    }
-
     /* NAT, Defrag and load balancing. */
-    HMAP_FOR_EACH (od, key_node, datapaths) {
-        if (!od->nbr) {
-            continue;
-        }
-
+    if (od->nbr) {
         /* Packets are allowed by default. */
         ovn_lflow_add(lflows, od, S_ROUTER_IN_DEFRAG, 0, "1", "next;");
         ovn_lflow_add(lflows, od, S_ROUTER_IN_UNSNAT, 0, "1", "next;");
@@ -9133,7 +9094,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
          * l3dgw_port (router has a port with "redirect-chassis"
          * specified). */
         if (!smap_get(&od->nbr->options, "chassis") && !od->l3dgw_port) {
-            continue;
+            ds_destroy(&match);
+            ds_destroy(&actions);
+            return;
         }
 
         struct sset nat_entries = SSET_INITIALIZER(&nat_entries);
@@ -9668,7 +9631,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
          * Gateway routers or router with gateway port. */
         if (!smap_get(&od->nbr->options, "chassis") && !od->l3dgw_port) {
             sset_destroy(&nat_entries);
-            continue;
+            ds_destroy(&match);
+            ds_destroy(&actions);
+            return;
         }
 
         /* A set to hold all ips that need defragmentation and tracking. */
@@ -9747,18 +9712,23 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         sset_destroy(&all_ips);
         sset_destroy(&nat_entries);
     }
+    ds_destroy(&match);
+    ds_destroy(&actions);
+}
+
+static void
+build_lrouter_flows_step_50_op(struct ovn_port *op, struct hmap *lflows)
+{
 
     /* Logical router ingress table ND_RA_OPTIONS & ND_RA_RESPONSE: IPv6 Router
      * Adv (RA) options and response. */
-    HMAP_FOR_EACH (op, key_node, ports) {
-        if (!op->nbrp || op->nbrp->peer || !op->peer) {
-            continue;
-        }
+    if (!op->nbrp || op->nbrp->peer || !op->peer) {
+        return;
+    }
+    if (op->lrp_networks.n_ipv6_addrs) {
 
-        if (!op->lrp_networks.n_ipv6_addrs) {
-            continue;
-        }
-
+        struct ds match = DS_EMPTY_INITIALIZER;
+        struct ds actions = DS_EMPTY_INITIALIZER;
         struct smap options;
         smap_clone(&options, &op->sb->options);
 
@@ -9787,7 +9757,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
             &op->nbrp->ipv6_ra_configs, "address_mode");
 
         if (!address_mode) {
-            continue;
+            ds_destroy(&match);
+            ds_destroy(&actions);
+            return;
         }
         if (strcmp(address_mode, "slaac") &&
             strcmp(address_mode, "dhcpv6_stateful") &&
@@ -9795,7 +9767,9 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
             VLOG_WARN_RL(&rl, "Invalid address mode [%s] defined",
                          address_mode);
-            continue;
+            ds_destroy(&match);
+            ds_destroy(&actions);
+            return;
         }
 
         if (smap_get_bool(&op->nbrp->ipv6_ra_configs, "send_periodic",
@@ -9866,6 +9840,62 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                     ds_cstr(&match), ds_cstr(&actions),
                                     &op->nbrp->header_);
         }
+        ds_destroy(&match);
+        ds_destroy(&actions);
+    }
+}
+
+static void
+build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
+                    struct hmap *lflows, struct shash *meter_groups,
+                    struct hmap *lbs)
+{
+    /* This flow table structure is documented in ovn-northd(8), so please
+     * update ovn-northd.8.xml if you change anything. */
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+
+    struct ovn_datapath *od;
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_0_od(od, lflows);
+    }
+
+    struct ovn_port *op;
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_0_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_10_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_10_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_20_od(od, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_20_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_30_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_40_op(op, lflows);
+    }
+
+    HMAP_FOR_EACH (od, key_node, datapaths) {
+        build_lrouter_flows_step_50_od(od, lflows, lbs, meter_groups);
+    }
+
+    HMAP_FOR_EACH (op, key_node, ports) {
+        build_lrouter_flows_step_50_op(op, lflows);
     }
 
     /* Logical router ingress table ND_RA_OPTIONS & ND_RA_RESPONSE: RS
