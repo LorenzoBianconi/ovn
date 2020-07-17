@@ -9626,6 +9626,11 @@ build_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         }
         smap_add(&options, "ipv6_prefix",
                  ipv6_prefix ? "true" : "false");
+
+        bool bfd_en = smap_get_bool(&op->nbrp->options, "bfd_en", false);
+        bfd_en = bfd_en & lrport_is_enabled(op->nbrp);
+        smap_add(&options, "bfd_en", bfd_en ? "true" : "false");
+
         sbrec_port_binding_set_options(op->sb, &options);
 
         smap_destroy(&options);
