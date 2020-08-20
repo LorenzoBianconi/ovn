@@ -118,7 +118,7 @@ start_ovn_daemon () {
     set "$@" --detach
     test X"$MONITOR" = Xno || set "$@" --monitor
 
-    set_cmd_wrapper $wrapper $daemon
+    set_cmd_wrapper "$wrapper" $daemon
 
     # priority
     if test X"$priority" != X; then

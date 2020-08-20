@@ -288,7 +288,8 @@ $cluster_remote_port
         set "$@" --sync-from=`cat $active_conf_file`
     fi
 
-    set_cmd_wrapper $wrapper ovsdb-$db
+    daemon=ovsdb-$db
+    set_cmd_wrapper "$wrapper" $daemon
 
     "$@" "$file"
 
