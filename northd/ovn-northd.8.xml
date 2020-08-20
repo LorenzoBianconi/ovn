@@ -366,6 +366,15 @@
       db="OVN_Northbound"/> table.
     </p>
 
+    <p>
+      This table also has a priority-110 flow with the match
+      <code>inport == <var>I</var></code> for all logical switch
+      datapaths to move traffic to the next table. Where <var>I</var>
+      is the peer of a logical router port. This flow is added to
+      skip the connection tracking of packets which enter from
+      logical router datapath to logical switch datapath.
+    </p>
+
     <h3>Ingress Table 5: Pre-stateful</h3>
 
     <p>
@@ -533,7 +542,20 @@
 
     <p>
       It contains a priority-0 flow that simply moves traffic to the next
-      table.  For established connections a priority 100 flow matches on
+      table.
+    </p>
+
+    <p>
+      A priority-65535 flow with the match
+      <code>inport == <var>I</var></code> for all logical switch
+      datapaths to move traffic to the next table. Where <var>I</var>
+      is the peer of a logical router port. This flow is added to
+      skip the connection tracking of packets which enter from
+      logical router datapath to logical switch datapath.
+    </p>
+
+    <p>
+      For established connections a priority 65534 flow matches on
       <code>ct.est &amp;&amp; !ct.rel &amp;&amp; !ct.new &amp;&amp;
       !ct.inv</code> and sets an action <code>reg0[2] = 1; next;</code> to act
       as a hint for table <code>Stateful</code> to send packets through
@@ -1139,6 +1161,17 @@ output;
           which has claimed these external ports. All the other chassis,
           drops these packets.
         </p>
+
+        <p>
+          A priority-100 flow is added for each <code>external</code> logical
+          port which doesn't reside on a chassis to drop any packet destined
+          to the router mac - with the match
+          <code>inport == <var>external</var> &amp;&amp;
+          eth.src == <var>E</var> &amp;&amp; eth.dst == <var>R</var>
+          &amp;&amp; !is_chassis_resident("<var>external</var>")</code>
+          where <var>E</var> is the external port mac and <var>R</var> is the
+          router port mac.
+        </p>
       </li>
 
       <li>
@@ -1359,6 +1392,15 @@ output;
       db="OVN_Northbound"/> table.
     </p>
 
+    <p>
+      This table also has a priority-110 flow with the match
+      <code>outport == <var>I</var></code> for all logical switch
+      datapaths to move traffic to the next table. Where <var>I</var>
+      is the peer of a logical router port. This flow is added to
+      skip the connection tracking of packets which will be entering
+      logical router datapath from logical switch datapath for routing.
+    </p>
+
     <h3>Egress Table 2: Pre-stateful</h3>
 
     <p>
@@ -1537,34 +1579,102 @@ output;
         <p>
           For each router port <var>P</var> that owns IP address <var>A</var>,
           which belongs to subnet <var>S</var> with prefix length <var>L</var>,
-          a priority-100 flow is added which matches
-          <code>inport == <var>P</var> &amp;&amp;
-          arp.spa == <var>S</var>/<var>L</var> &amp;&amp; arp.op == 1</code>
-          (ARP request) with the
-          following actions:
+          if the option <code>always_learn_from_arp_request</code> is
+          <code>true</code> for this router, a priority-100 flow is added which
+          matches <code>inport == <var>P</var> &amp;&amp; arp.spa ==
+          <var>S</var>/<var>L</var> &amp;&amp; arp.op == 1</code> (ARP request)
+          with the following actions:
         </p>
 
         <pre>
-reg9[4] = lookup_arp(inport, arp.spa, arp.sha);
+reg9[2] = lookup_arp(inport, arp.spa, arp.sha);
+next;
+        </pre>
+
+        <p>
+          If the option <code>always_learn_from_arp_request</code> is
+          <code>false</code>, the following two flows are added.
+        </p>
+
+        <p>
+          A priority-110 flow is added which matches <code>inport ==
+          <var>P</var> &amp;&amp; arp.spa == <var>S</var>/<var>L</var>
+          &amp;&amp; arp.tpa == <var>A</var> &amp;&amp; arp.op == 1</code>
+          (ARP request) with the following actions:
+        </p>
+
+        <pre>
+reg9[2] = lookup_arp(inport, arp.spa, arp.sha);
+reg9[3] = 1;
+next;
+        </pre>
+
+        <p>
+          A priority-100 flow is added which matches <code>inport ==
+          <var>P</var> &amp;&amp; arp.spa == <var>S</var>/<var>L</var>
+          &amp;&amp; arp.op == 1</code> (ARP request) with the following
+          actions:
+        </p>
+
+        <pre>
+reg9[2] = lookup_arp(inport, arp.spa, arp.sha);
+reg9[3] = lookup_arp_ip(inport, arp.spa);
 next;
         </pre>
 
         <p>
           If the logical router port <var>P</var> is a distributed gateway
           router port, additional match
-          <code>is_chassis_resident(cr-<var>P</var>)</code> is added so that
-          the resident gateway chassis handles the neighbor lookup.
+          <code>is_chassis_resident(cr-<var>P</var>)</code> is added for all
+          these flows.
         </p>
       </li>
 
       <li>
         <p>
           A priority-100 flow which matches on ARP reply packets and applies
-          the actions:
+          the actions if the option <code>always_learn_from_arp_request</code>
+          is <code>true</code>:
         </p>
 
         <pre>
-reg9[4] = lookup_arp(inport, arp.spa, arp.sha);
+reg9[2] = lookup_arp(inport, arp.spa, arp.sha);
+next;
+        </pre>
+
+        <p>
+          If the option <code>always_learn_from_arp_request</code>
+          is <code>false</code>, the above actions will be:
+        </p>
+
+        <pre>
+reg9[2] = lookup_arp(inport, arp.spa, arp.sha);
+reg9[3] = 1;
+next;
+        </pre>
+
+      </li>
+
+      <li>
+        <p>
+          A priority-100 flow which matches on IPv6 Neighbor Discovery
+          advertisement packet and applies the actions if the option
+          <code>always_learn_from_arp_request</code> is <code>true</code>:
+        </p>
+
+        <pre>
+reg9[2] = lookup_nd(inport, nd.target, nd.tll);
+next;
+        </pre>
+
+        <p>
+          If the option <code>always_learn_from_arp_request</code>
+          is <code>false</code>, the above actions will be:
+        </p>
+
+        <pre>
+reg9[2] = lookup_nd(inport, nd.target, nd.tll);
+reg9[3] = 1;
 next;
         </pre>
       </li>
@@ -1572,30 +1682,30 @@ next;
       <li>
         <p>
           A priority-100 flow which matches on IPv6 Neighbor Discovery
-          advertisement packet and applies the actions:
+          solicitation packet and applies the actions if the option
+          <code>always_learn_from_arp_request</code> is <code>true</code>:
         </p>
 
         <pre>
-reg9[4] = lookup_nd(inport, nd.target, nd.tll);
+reg9[2] = lookup_nd(inport, ip6.src, nd.sll);
 next;
         </pre>
-      </li>
 
-      <li>
         <p>
-          A priority-100 flow which matches on IPv6 Neighbor Discovery
-          solicitation packet and applies the actions:
+          If the option <code>always_learn_from_arp_request</code>
+          is <code>false</code>, the above actions will be:
         </p>
 
         <pre>
-reg9[4] = lookup_nd(inport, ip6.src, nd.sll);
+reg9[2] = lookup_nd(inport, ip6.src, nd.sll);
+reg9[3] = lookup_nd_ip(inport, ip6.src);
 next;
         </pre>
       </li>
 
       <li>
         A priority-0 fallback flow that matches all packets and applies
-        the action <code>reg9[5] = 1; next;</code>
+        the action <code>reg9[2] = 1; next;</code>
         advancing the packet to the next table.
       </li>
     </ul>
@@ -1604,24 +1714,28 @@ next;
 
     <p>
       This table adds flows to learn the mac bindings from the ARP and
-      IPv6 Neighbor Solicitation/Advertisement packets if ARP/ND lookup
-      failed in the previous table.
+      IPv6 Neighbor Solicitation/Advertisement packets if it is needed
+      according to the lookup results from the previous stage.
     </p>
 
     <p>
-      reg9[4] will be <code>1</code> if the <code>lookup_arp/lookup_nd</code>
-      in the previous table was successful.
+      reg9[2] will be <code>1</code> if the <code>lookup_arp/lookup_nd</code>
+      in the previous table was successful or skipped, meaning no need
+      to learn mac binding from the packet.
     </p>
 
     <p>
-      reg9[5] will be <code>1</code> if there was no need to do the lookup.
+      reg9[3] will be <code>1</code> if the
+      <code>lookup_arp_ip/lookup_nd_ip</code> in the previous table was
+      successful or skipped, meaning it is ok to learn mac binding from
+      the packet (if reg9[2] is 0).
     </p>
 
     <ul>
       <li>
-        A priority-100 flow with the match
-        <code>reg9[4] == 1 || reg9[5] == 1</code> and advances the packet
-        to the next table as there is no need to learn the neighbor.
+        A priority-100 flow with the match <code>reg9[2] == 1 || reg9[3] ==
+        0</code> and advances the packet to the next table as there is no need
+        to learn the neighbor.
       </li>
 
       <li>
@@ -1849,15 +1963,15 @@ nd_na_router {
       <li>
         <p>
           These flows reply to ARP requests or IPv6 neighbor solicitation
-          for the virtual IP addresses configured in the router for DNAT
-          or load balancing.
+          for the virtual IP addresses configured in the router for NAT
+          (both DNAT and SNAT) or load balancing.
         </p>
 
         <p>
-          IPv4: For a configured DNAT IP address or a load balancer
-          IPv4 VIP <var>A</var>, for each router port <var>P</var> with
-          Ethernet address <var>E</var>, a priority-90 flow matches
-          <code>arp.op == 1 &amp;&amp; arp.tpa == <var>A</var></code>
+          IPv4: For a configured NAT (both DNAT and SNAT) IP address or a
+          load balancer IPv4 VIP <var>A</var>, for each router port
+          <var>P</var> with Ethernet address <var>E</var>, a priority-90 flow
+          matches <code>arp.op == 1 &amp;&amp; arp.tpa == <var>A</var></code>
           (ARP request) with the following actions:
         </p>
 
@@ -1887,9 +2001,9 @@ output;
         </p>
 
         <p>
-          IPv6: For a configured DNAT IP address or a load balancer
-          IPv6 VIP <var>A</var>, solicited node address <var>S</var>,
-          for each router port <var>P</var> with
+          IPv6: For a configured NAT (both DNAT and SNAT) IP address or a
+          load balancer IPv6 VIP <var>A</var>, solicited node address
+          <var>S</var>, for each router port <var>P</var> with
           Ethernet address <var>E</var>, a priority-90 flow matches
           <code>inport == <var>P</var> &amp;&amp; nd_ns &amp;&amp;
           ip6.dst == {<var>A</var>, <var>S</var>} &amp;&amp;
@@ -2120,15 +2234,31 @@ icmp6 {
     <p>
       This is to send packets to connection tracker for tracking and
       defragmentation.  It contains a priority-0 flow that simply moves traffic
-      to the next table.  If load balancing rules with virtual IP addresses
-      (and ports) are configured in <code>OVN_Northbound</code> database for a
-      Gateway router, a priority-100 flow is added for each configured virtual
-      IP address <var>VIP</var>. For IPv4 <var>VIPs</var> the flow matches
-      <code>ip &amp;&amp; ip4.dst == <var>VIP</var></code>.  For IPv6
-      <var>VIPs</var>, the flow matches <code>ip &amp;&amp; ip6.dst ==
-      <var>VIP</var></code>.  The flow uses the action <code>ct_next;</code>
-      to send IP packets to the connection tracker for packet de-fragmentation
-      and tracking before sending it to the next table.
+      to the next table.
+    </p>
+
+    <p>
+      If load balancing rules with virtual IP addresses (and ports) are
+      configured in <code>OVN_Northbound</code> database for a Gateway router,
+      a priority-100 flow is added for each configured virtual IP address
+      <var>VIP</var>. For IPv4 <var>VIPs</var> the flow matches <code>ip
+      &amp;&amp; ip4.dst == <var>VIP</var></code>.  For IPv6 <var>VIPs</var>,
+      the flow matches <code>ip &amp;&amp; ip6.dst == <var>VIP</var></code>.
+      The flow uses the action <code>ct_next;</code> to send IP packets to the
+      connection tracker for packet de-fragmentation and tracking before
+      sending it to the next table.
+    </p>
+
+    <p>
+      If ECMP routes with symmetric reply are configured in the
+      <code>OVN_Northbound</code> database for a gateway router, a priority-100
+      flow is added for each router port on which symmetric replies are
+      configured. The matching logic for these ports essentially reverses the
+      configured logic of the ECMP route. So for instance, a route with a
+      destination routing policy will instead match if the source IP address
+      matches the static route's prefix. The flow uses the action
+      <code>ct_next</code> to send IP packets to the connection tracker for
+      packet de-fragmentation and tracking before sending it to the next table.
     </p>
 
     <h3>Ingress Table 5: UNSNAT</h3>
@@ -2489,7 +2619,15 @@ output;
       table.  This table, instead, is responsible for determine the ECMP
       group id and select a member id within the group based on 5-tuple
       hashing.  It stores group id in <code>reg8[0..15]</code> and member id in
-      <code>reg8[16..31]</code>.
+      <code>reg8[16..31]</code>. This step is skipped if the traffic going
+      out the ECMP route is reply traffic, and the ECMP route was configured
+      to use symmetric replies. Instead, the stored <code>ct_label</code> value
+      is used to choose the destination. The least significant 48 bits of the
+      <code>ct_label</code> tell the destination MAC address to which the
+      packet should be sent. The next 16 bits tell the logical router port on
+      which the packet should be sent. These values in the
+      <code>ct_label</code> are set when the initial ingress traffic is
+      received over the ECMP route.
     </p>
 
     <p>
@@ -2640,6 +2778,11 @@ select(reg8[16..31], <var>MID1</var>, <var>MID2</var>, ...);
     </p>
 
     <p>
+      This processing is skipped for reply traffic being sent out of an ECMP
+      route if the route was configured to use symmetric replies.
+    </p>
+
+    <p>
       This table contains the following logical flows:
     </p>
 
@@ -2701,7 +2844,10 @@ outport = <var>P</var>;
           <code>Logical_Switch_Port</code> table.  For router ports
           connected to other logical routers, MAC bindings can be known
           statically from the <code>mac</code> and <code>networks</code>
-          column in the <code>Logical_Router_Port</code> table.
+          column in the <code>Logical_Router_Port</code> table.  (Note: the
+          flow is NOT installed for the IP addresses that belong to a neighbor
+          logical router port if the current router has the
+          <code>options:dynamic_neigh_routers</code> set to <code>true</code>)
         </p>
 
         <p>

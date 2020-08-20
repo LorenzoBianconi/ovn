@@ -256,10 +256,8 @@
     </column>
 
     <column name="nb_cfg">
-      Sequence number for the configuration.  When <code>ovn-controller</code>
-      updates the configuration of a chassis from the contents of the
-      southbound database, it copies <ref table="SB_Global" column="nb_cfg"/>
-      from the <ref table="SB_Global"/> table into this column.
+      Deprecated. This column is replaced by the <ref table="Chassis_Private"
+      column="nb_cfg"/> column of the <ref table="Chassis_Private"/> table.
     </column>
 
     <column name="other_config" key="ovn-bridge-mappings">
@@ -363,6 +361,42 @@
         <ref column="vtep_logical_switches" table="Chassis"/>, will be
         associated with this <ref table="Chassis"/>.
       </column>
+    </group>
+  </table>
+
+  <table name="Chassis_Private" title="Chassis Private">
+    <p>
+      Each row in this table maintains per chassis private data that are
+      accessed only by the owning chassis (write only) and ovn-northd, not by
+      any other chassis.  These data are stored in this separate table instead
+      of the <ref table="Chassis"/> table for performance considerations:
+      the rows in this table can be conditionally monitored by chassises so
+      that each chassis only get update notifications for its own row, to avoid
+      unnecessary chassis private data update flooding in a large scale
+      deployment.
+    </p>
+
+    <column name="name">
+      The name of the chassis that owns these chassis-private data.
+    </column>
+
+    <column name="chassis">
+      The reference to <ref table="Chassis"/> table for the chassis that owns
+      these chassis-private data.
+    </column>
+
+    <column name="nb_cfg">
+      Sequence number for the configuration.  When <code>ovn-controller</code>
+      updates the configuration of a chassis from the contents of the
+      southbound database, it copies <ref table="SB_Global" column="nb_cfg"/>
+      from the <ref table="SB_Global"/> table into this column.
+    </column>
+
+    <group title="Common Columns">
+      The overall purpose of these columns is described under <code>Common
+      Columns</code> at the beginning of this document.
+
+      <column name="external_ids"/>
     </group>
   </table>
 
@@ -1261,10 +1295,10 @@
           </p>
         </dd>
 
-        <dt><code>ct_commit;</code></dt>
-        <dt><code>ct_commit(ct_mark=<var>value[/mask]</var>);</code></dt>
-        <dt><code>ct_commit(ct_label=<var>value[/mask]</var>);</code></dt>
-        <dt><code>ct_commit(ct_mark=<var>value[/mask]</var>, ct_label=<var>value[/mask]</var>);</code></dt>
+        <dt><code>ct_commit { };</code></dt>
+        <dt><code>ct_commit { ct_mark=<var>value[/mask]</var>; };</code></dt>
+        <dt><code>ct_commit { ct_label=<var>value[/mask]</var>; };</code></dt>
+        <dt><code>ct_commit { ct_mark=<var>value[/mask]</var>; ct_label=<var>value[/mask]</var>; };</code></dt>
         <dd>
           <p>
             Commit the flow to the connection tracking entry associated with it
@@ -1276,6 +1310,9 @@
             tracking entry. <code>ct_mark</code> is a 32-bit field.
             <code>ct_label</code> is a 128-bit field. The <var>value[/mask]</var>
             should be specified in hex string if more than 64bits are to be used.
+            Registers and other named fields can be used for <var>value</var>.
+            <code>ct_mark</code> and <code>ct_label</code> may be sub-addressed
+            in order to have specific bits set.
           </p>
 
           <p>
@@ -1441,6 +1478,34 @@
             <b>Example:</b>
             <code>
               reg0[0] = lookup_arp(inport, arp.spa, arp.sha);
+            </code>
+          </p>
+        </dd>
+
+        <dt>
+          <code><var>R</var> = lookup_arp_ip(<var>P</var>, <var>A</var>);</code>
+        </dt>
+
+        <dd>
+          <p>
+            <b>Parameters</b>: logical port string field <var>P</var>, 32-bit
+            IP address field <var>A</var>.
+          </p>
+
+          <p>
+            <b>Result</b>: stored to a 1-bit subfield <var>R</var>.
+          </p>
+
+          <p>
+            Looks up <var>A</var> in <var>P</var>'s mac binding table. If an
+            entry is found, stores <code>1</code> in the 1-bit subfield
+            <var>R</var>, else 0.
+          </p>
+
+          <p>
+            <b>Example:</b>
+            <code>
+              reg0[0] = lookup_arp_ip(inport, arp.spa);
             </code>
           </p>
         </dd>
@@ -1625,6 +1690,33 @@
             <b>Example:</b>
             <code>
               reg0[0] = lookup_nd(inport, ip6.src, eth.src);
+            </code>
+          </p>
+        </dd>
+
+        <dt><code><var>R</var> = lookup_nd_ip(<var>P</var>, <var>A</var>);</code>
+        </dt>
+
+        <dd>
+          <p>
+            <b>Parameters</b>: logical port string field <var>P</var>, 128-bit
+            IP address field <var>A</var>.
+          </p>
+
+          <p>
+            <b>Result</b>: stored to a 1-bit subfield <var>R</var>.
+          </p>
+
+          <p>
+            Looks up <var>A</var> in <var>P</var>'s mac binding table. If an
+            entry is found, stores <code>1</code> in the 1-bit subfield
+            <var>R</var>, else 0.
+          </p>
+
+          <p>
+            <b>Example:</b>
+            <code>
+              reg0[0] = lookup_nd_ip(inport, ip6.src);
             </code>
           </p>
         </dd>

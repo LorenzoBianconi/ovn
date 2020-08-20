@@ -195,9 +195,19 @@ struct action_context {
     struct ofpbuf *ovnacts;     /* Actions. */
     struct expr *prereqs;       /* Prerequisites to apply to match. */
     int depth;                  /* Current nested action depth. */
+    enum expr_write_scope scope;  /* Current writeability scope */
 };
 
 static void parse_actions(struct action_context *, enum lex_type sentinel);
+
+static void parse_nested_action(struct action_context *ctx,
+                                enum ovnact_type type,
+                                const char *prereq,
+                                enum expr_write_scope scope);
+
+static void format_nested_action(const struct ovnact_nest *on,
+                                 const char *name,
+                                 struct ds *s);
 
 static bool
 action_parse_field(struct action_context *ctx,
@@ -207,7 +217,7 @@ action_parse_field(struct action_context *ctx,
         return false;
     }
 
-    char *error = expr_type_check(f, n_bits, rw);
+    char *error = expr_type_check(f, n_bits, rw, ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -374,7 +384,7 @@ parse_LOAD(struct action_context *ctx, const struct expr_field *lhs)
 
     load->dst = *lhs;
 
-    char *error = expr_type_check(lhs, lhs->n_bits, true);
+    char *error = expr_type_check(lhs, lhs->n_bits, true, ctx->scope);
     if (error) {
         ctx->ovnacts->size = ofs;
         lexer_error(ctx->lexer, "%s", error);
@@ -513,9 +523,9 @@ parse_assignment_action(struct action_context *ctx, bool exchange,
         return;
     }
 
-    char *error = expr_type_check(lhs, lhs->n_bits, true);
+    char *error = expr_type_check(lhs, lhs->n_bits, true, ctx->scope);
     if (!error) {
-        error = expr_type_check(&rhs, rhs.n_bits, true);
+        error = expr_type_check(&rhs, rhs.n_bits, exchange, ctx->scope);
     }
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
@@ -618,123 +628,52 @@ ovnact_ct_next_free(struct ovnact_ct_next *a OVS_UNUSED)
 }
 
 static void
-parse_ct_commit_arg(struct action_context *ctx,
-                    struct ovnact_ct_commit *cc)
-{
-    if (lexer_match_id(ctx->lexer, "ct_mark")) {
-        if (!lexer_force_match(ctx->lexer, LEX_T_EQUALS)) {
-            return;
-        }
-        if (ctx->lexer->token.type == LEX_T_INTEGER) {
-            cc->ct_mark = ntohll(ctx->lexer->token.value.integer);
-            cc->ct_mark_mask = UINT32_MAX;
-        } else if (ctx->lexer->token.type == LEX_T_MASKED_INTEGER) {
-            cc->ct_mark = ntohll(ctx->lexer->token.value.integer);
-            cc->ct_mark_mask = ntohll(ctx->lexer->token.mask.integer);
-        } else {
-            lexer_syntax_error(ctx->lexer, "expecting integer");
-            return;
-        }
-        lexer_get(ctx->lexer);
-    } else if (lexer_match_id(ctx->lexer, "ct_label")) {
-        if (!lexer_force_match(ctx->lexer, LEX_T_EQUALS)) {
-            return;
-        }
-        if (ctx->lexer->token.type == LEX_T_INTEGER) {
-            cc->ct_label = ctx->lexer->token.value.be128_int;
-            cc->ct_label_mask = OVS_BE128_MAX;
-        } else if (ctx->lexer->token.type == LEX_T_MASKED_INTEGER) {
-            cc->ct_label = ctx->lexer->token.value.be128_int;
-            cc->ct_label_mask = ctx->lexer->token.mask.be128_int;
-        } else {
-            lexer_syntax_error(ctx->lexer, "expecting integer");
-            return;
-        }
-        lexer_get(ctx->lexer);
-    } else {
-        lexer_syntax_error(ctx->lexer, NULL);
-    }
-}
-
-static void
 parse_CT_COMMIT(struct action_context *ctx)
 {
-    add_prerequisite(ctx, "ip");
-
-    struct ovnact_ct_commit *ct_commit = ovnact_put_CT_COMMIT(ctx->ovnacts);
-    if (lexer_match(ctx->lexer, LEX_T_LPAREN)) {
-        while (!lexer_match(ctx->lexer, LEX_T_RPAREN)) {
-            parse_ct_commit_arg(ctx, ct_commit);
-            if (ctx->lexer->error) {
-                return;
-            }
-            lexer_match(ctx->lexer, LEX_T_COMMA);
-        }
+    if (ctx->lexer->token.type == LEX_T_LCURLY) {
+        parse_nested_action(ctx, OVNACT_CT_COMMIT, "ip",
+                            WR_CT_COMMIT);
+    } else {
+        /* Add an empty nested action to allow for "ct_commit;" syntax */
+        add_prerequisite(ctx, "ip");
+        struct ovnact_nest *on = ovnact_put(ctx->ovnacts, OVNACT_CT_COMMIT,
+                                            OVNACT_ALIGN(sizeof *on));
+        on->nested_len = 0;
+        on->nested = NULL;
     }
 }
 
 static void
-format_CT_COMMIT(const struct ovnact_ct_commit *cc, struct ds *s)
+format_CT_COMMIT(const struct ovnact_nest *on, struct ds *s)
 {
-    ds_put_cstr(s, "ct_commit(");
-    if (cc->ct_mark_mask) {
-        ds_put_format(s, "ct_mark=%#"PRIx32, cc->ct_mark);
-        if (cc->ct_mark_mask != UINT32_MAX) {
-            ds_put_format(s, "/%#"PRIx32, cc->ct_mark_mask);
-        }
+    if (on->nested_len) {
+        format_nested_action(on, "ct_commit", s);
+    } else {
+        ds_put_cstr(s, "ct_commit;");
     }
-    if (!ovs_be128_is_zero(cc->ct_label_mask)) {
-        if (ds_last(s) != '(') {
-            ds_put_cstr(s, ", ");
-        }
-
-        ds_put_format(s, "ct_label=");
-        ds_put_hex(s, &cc->ct_label, sizeof cc->ct_label);
-        if (!ovs_be128_equals(cc->ct_label_mask, OVS_BE128_MAX)) {
-            ds_put_char(s, '/');
-            ds_put_hex(s, &cc->ct_label_mask, sizeof cc->ct_label_mask);
-        }
-    }
-    if (!ds_chomp(s, '(')) {
-        ds_put_char(s, ')');
-    }
-    ds_put_char(s, ';');
 }
 
 static void
-encode_CT_COMMIT(const struct ovnact_ct_commit *cc,
+encode_CT_COMMIT(const struct ovnact_nest *on,
                  const struct ovnact_encode_params *ep OVS_UNUSED,
                  struct ofpbuf *ofpacts)
 {
     struct ofpact_conntrack *ct = ofpact_put_CT(ofpacts);
     ct->flags = NX_CT_F_COMMIT;
     ct->recirc_table = NX_CT_RECIRC_NONE;
-    ct->zone_src.field = mf_from_id(MFF_LOG_CT_ZONE);
+    ct->zone_src.field = ep->is_switch
+        ? mf_from_id(MFF_LOG_CT_ZONE)
+        : mf_from_id(MFF_LOG_DNAT_ZONE);
     ct->zone_src.ofs = 0;
     ct->zone_src.n_bits = 16;
 
     size_t set_field_offset = ofpacts->size;
     ofpbuf_pull(ofpacts, set_field_offset);
 
-    if (cc->ct_mark_mask) {
-        const ovs_be32 value = htonl(cc->ct_mark);
-        const ovs_be32 mask = htonl(cc->ct_mark_mask);
-        ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_MARK), &value, &mask);
-    }
-
-    if (!ovs_be128_is_zero(cc->ct_label_mask)) {
-        ofpact_put_set_field(ofpacts, mf_from_id(MFF_CT_LABEL), &cc->ct_label,
-                             &cc->ct_label_mask);
-    }
-
+    ovnacts_encode(on->nested, on->nested_len, ep, ofpacts);
     ofpacts->header = ofpbuf_push_uninit(ofpacts, set_field_offset);
     ct = ofpacts->header;
     ofpact_finish(ofpacts, &ct->ofpact);
-}
-
-static void
-ovnact_ct_commit_free(struct ovnact_ct_commit *cc OVS_UNUSED)
-{
 }
 
 static void
@@ -1159,7 +1098,8 @@ encode_CT_LB(const struct ovnact_ct_lb *cl,
         if (dst->port) {
             ds_put_format(&ds, ":%"PRIu16, dst->port);
         }
-        ds_put_format(&ds, "),commit,table=%d,zone=NXM_NX_REG%d[0..15])",
+        ds_put_format(&ds, "),commit,table=%d,zone=NXM_NX_REG%d[0..15],"
+                      "exec(set_field:2/2->ct_label))",
                       recirc_table, zone_reg);
     }
 
@@ -1186,7 +1126,8 @@ static void
 parse_select_action(struct action_context *ctx, struct expr_field *res_field)
 {
     /* Check if the result field is modifiable. */
-    char *error = expr_type_check(res_field, res_field->n_bits, true);
+    char *error = expr_type_check(res_field, res_field->n_bits, true,
+                                  ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -1337,7 +1278,7 @@ encode_CT_CLEAR(const struct ovnact_null *null OVS_UNUSED,
  * actions on a packet derived from the one being processed. */
 static void
 parse_nested_action(struct action_context *ctx, enum ovnact_type type,
-                    const char *prereq)
+                    const char *prereq, enum expr_write_scope scope)
 {
     if (!lexer_force_match(ctx->lexer, LEX_T_LCURLY)) {
         return;
@@ -1357,6 +1298,7 @@ parse_nested_action(struct action_context *ctx, enum ovnact_type type,
         .ovnacts = &nested,
         .prereqs = NULL,
         .depth = ctx->depth + 1,
+        .scope = scope,
     };
     parse_actions(&inner_ctx, LEX_T_RCURLY);
 
@@ -1387,61 +1329,61 @@ parse_nested_action(struct action_context *ctx, enum ovnact_type type,
 static void
 parse_ARP(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ARP, "ip4");
+    parse_nested_action(ctx, OVNACT_ARP, "ip4", ctx->scope);
 }
 
 static void
 parse_ICMP4(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ICMP4, "ip4");
+    parse_nested_action(ctx, OVNACT_ICMP4, "ip4", ctx->scope);
 }
 
 static void
 parse_ICMP4_ERROR(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ICMP4_ERROR, "ip4");
+    parse_nested_action(ctx, OVNACT_ICMP4_ERROR, "ip4", ctx->scope);
 }
 
 static void
 parse_ICMP6(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ICMP6, "ip6");
+    parse_nested_action(ctx, OVNACT_ICMP6, "ip6", ctx->scope);
 }
 
 static void
 parse_ICMP6_ERROR(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ICMP6_ERROR, "ip6");
+    parse_nested_action(ctx, OVNACT_ICMP6_ERROR, "ip6", ctx->scope);
 }
 
 static void
 parse_TCP_RESET(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_TCP_RESET, "tcp");
+    parse_nested_action(ctx, OVNACT_TCP_RESET, "tcp", ctx->scope);
 }
 
 static void
 parse_ND_NA(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ND_NA, "nd_ns");
+    parse_nested_action(ctx, OVNACT_ND_NA, "nd_ns", ctx->scope);
 }
 
 static void
 parse_ND_NA_ROUTER(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ND_NA_ROUTER, "nd_ns");
+    parse_nested_action(ctx, OVNACT_ND_NA_ROUTER, "nd_ns", ctx->scope);
 }
 
 static void
 parse_ND_NS(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_ND_NS, "ip6");
+    parse_nested_action(ctx, OVNACT_ND_NS, "ip6", ctx->scope);
 }
 
 static void
 parse_CLONE(struct action_context *ctx)
 {
-    parse_nested_action(ctx, OVNACT_CLONE, NULL);
+    parse_nested_action(ctx, OVNACT_CLONE, NULL, WR_DEFAULT);
 }
 
 static void
@@ -1867,8 +1809,9 @@ ovnact_put_mac_bind_free(struct ovnact_put_mac_bind *put_mac OVS_UNUSED)
 {
 }
 
-static void format_lookup_mac(const struct ovnact_lookup_mac_bind *lookup_mac,
-                              struct ds *s, const char *name)
+static void format_lookup_mac_bind(
+    const struct ovnact_lookup_mac_bind *lookup_mac,
+    struct ds *s, const char *name)
 {
     expr_field_format(&lookup_mac->dst, s);
     ds_put_format(s, " = %s(", name);
@@ -1884,21 +1827,21 @@ static void
 format_LOOKUP_ARP(const struct ovnact_lookup_mac_bind *lookup_mac,
                          struct ds *s)
 {
-    format_lookup_mac(lookup_mac, s, "lookup_arp");
+    format_lookup_mac_bind(lookup_mac, s, "lookup_arp");
 }
 
 static void
 format_LOOKUP_ND(const struct ovnact_lookup_mac_bind *lookup_mac,
                         struct ds *s)
 {
-    format_lookup_mac(lookup_mac, s, "lookup_nd");
+    format_lookup_mac_bind(lookup_mac, s, "lookup_nd");
 }
 
 static void
-encode_lookup_mac(const struct ovnact_lookup_mac_bind *lookup_mac,
-                  enum mf_field_id ip_field,
-                  const struct ovnact_encode_params *ep,
-                  struct ofpbuf *ofpacts)
+encode_lookup_mac_bind(const struct ovnact_lookup_mac_bind *lookup_mac,
+                       enum mf_field_id ip_field,
+                       const struct ovnact_encode_params *ep,
+                       struct ofpbuf *ofpacts)
 {
     const struct arg args[] = {
         { expr_resolve_field(&lookup_mac->port), MFF_LOG_INPORT },
@@ -1928,7 +1871,7 @@ encode_LOOKUP_ARP(const struct ovnact_lookup_mac_bind *lookup_mac,
                   const struct ovnact_encode_params *ep,
                   struct ofpbuf *ofpacts)
 {
-    encode_lookup_mac(lookup_mac, MFF_REG0, ep, ofpacts);
+    encode_lookup_mac_bind(lookup_mac, MFF_REG0, ep, ofpacts);
 }
 
 static void
@@ -1936,7 +1879,7 @@ encode_LOOKUP_ND(const struct ovnact_lookup_mac_bind *lookup_mac,
                         const struct ovnact_encode_params *ep,
                         struct ofpbuf *ofpacts)
 {
-    encode_lookup_mac(lookup_mac, MFF_XXREG0, ep, ofpacts);
+    encode_lookup_mac_bind(lookup_mac, MFF_XXREG0, ep, ofpacts);
 }
 
 static void
@@ -1946,7 +1889,7 @@ parse_lookup_mac_bind(struct action_context *ctx,
                       struct ovnact_lookup_mac_bind *lookup_mac)
 {
     /* Validate that the destination is a 1-bit, modifiable field. */
-    char *error = expr_type_check(dst, 1, true);
+    char *error = expr_type_check(dst, 1, true, ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -1968,6 +1911,110 @@ parse_lookup_mac_bind(struct action_context *ctx,
 static void
 ovnact_lookup_mac_bind_free(
     struct ovnact_lookup_mac_bind *lookup_mac OVS_UNUSED)
+{
+
+}
+
+
+static void format_lookup_mac_bind_ip(
+    const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+    struct ds *s, const char *name)
+{
+    expr_field_format(&lookup_mac->dst, s);
+    ds_put_format(s, " = %s(", name);
+    expr_field_format(&lookup_mac->port, s);
+    ds_put_cstr(s, ", ");
+    expr_field_format(&lookup_mac->ip, s);
+    ds_put_cstr(s, ");");
+}
+
+static void
+format_LOOKUP_ARP_IP(const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+                     struct ds *s)
+{
+    format_lookup_mac_bind_ip(lookup_mac, s, "lookup_arp_ip");
+}
+
+static void
+format_LOOKUP_ND_IP(const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+                    struct ds *s)
+{
+    format_lookup_mac_bind_ip(lookup_mac, s, "lookup_nd_ip");
+}
+
+static void
+encode_lookup_mac_bind_ip(const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+                          enum mf_field_id ip_field,
+                          const struct ovnact_encode_params *ep,
+                          struct ofpbuf *ofpacts)
+{
+    const struct arg args[] = {
+        { expr_resolve_field(&lookup_mac->port), MFF_LOG_OUTPORT },
+        { expr_resolve_field(&lookup_mac->ip), ip_field },
+    };
+
+    encode_setup_args(args, ARRAY_SIZE(args), ofpacts);
+    init_stack(ofpact_put_STACK_PUSH(ofpacts), MFF_ETH_DST);
+
+    struct mf_subfield dst = expr_resolve_field(&lookup_mac->dst);
+    ovs_assert(dst.field);
+
+    put_load(0, MFF_LOG_FLAGS, MLF_LOOKUP_MAC_BIT, 1, ofpacts);
+    emit_resubmit(ofpacts, ep->mac_bind_ptable);
+
+    struct ofpact_reg_move *orm = ofpact_put_REG_MOVE(ofpacts);
+    orm->dst = dst;
+    orm->src.field = mf_from_id(MFF_LOG_FLAGS);
+    orm->src.ofs = MLF_LOOKUP_MAC_BIT;
+    orm->src.n_bits = 1;
+
+    init_stack(ofpact_put_STACK_POP(ofpacts), MFF_ETH_DST);
+    encode_restore_args(args, ARRAY_SIZE(args), ofpacts);
+}
+
+static void
+encode_LOOKUP_ARP_IP(const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+                     const struct ovnact_encode_params *ep,
+                     struct ofpbuf *ofpacts)
+{
+    encode_lookup_mac_bind_ip(lookup_mac, MFF_REG0, ep, ofpacts);
+}
+
+static void
+encode_LOOKUP_ND_IP(const struct ovnact_lookup_mac_bind_ip *lookup_mac,
+                    const struct ovnact_encode_params *ep,
+                    struct ofpbuf *ofpacts)
+{
+    encode_lookup_mac_bind_ip(lookup_mac, MFF_XXREG0, ep, ofpacts);
+}
+
+static void
+parse_lookup_mac_bind_ip(struct action_context *ctx,
+                         const struct expr_field *dst,
+                         int width,
+                         struct ovnact_lookup_mac_bind_ip *lookup_mac)
+{
+    /* Validate that the destination is a 1-bit, modifiable field. */
+    char *error = expr_type_check(dst, 1, true, ctx->scope);
+    if (error) {
+        lexer_error(ctx->lexer, "%s", error);
+        free(error);
+        return;
+    }
+
+    lexer_get(ctx->lexer); /* Skip lookup_arp/lookup_nd. */
+    lexer_get(ctx->lexer); /* Skip '('. * */
+
+    action_parse_field(ctx, 0, false, &lookup_mac->port);
+    lexer_force_match(ctx->lexer, LEX_T_COMMA);
+    action_parse_field(ctx, width, false, &lookup_mac->ip);
+    lexer_force_match(ctx->lexer, LEX_T_RPAREN);
+    lookup_mac->dst = *dst;
+}
+
+static void
+ovnact_lookup_mac_bind_ip_free(
+    struct ovnact_lookup_mac_bind_ip *lookup_mac OVS_UNUSED)
 {
 
 }
@@ -2178,7 +2225,7 @@ parse_put_opts(struct action_context *ctx, const struct expr_field *dst,
     lexer_get(ctx->lexer); /* Skip '('. */
 
     /* Validate that the destination is a 1-bit, modifiable field. */
-    char *error = expr_type_check(dst, 1, true);
+    char *error = expr_type_check(dst, 1, true, ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -2577,7 +2624,7 @@ parse_dns_lookup(struct action_context *ctx, const struct expr_field *dst,
         return;
     }
     /* Validate that the destination is a 1-bit, modifiable field. */
-    char *error = expr_type_check(dst, 1, true);
+    char *error = expr_type_check(dst, 1, true, ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -3102,7 +3149,7 @@ parse_check_pkt_larger(struct action_context *ctx,
                        struct ovnact_check_pkt_larger *cipl)
 {
      /* Validate that the destination is a 1-bit, modifiable field. */
-    char *error = expr_type_check(dst, 1, true);
+    char *error = expr_type_check(dst, 1, true, ctx->scope);
     if (error) {
         lexer_error(ctx->lexer, "%s", error);
         free(error);
@@ -3428,6 +3475,14 @@ parse_set_action(struct action_context *ctx)
                 && lexer_lookahead(ctx->lexer) == LEX_T_LPAREN) {
             parse_lookup_mac_bind(ctx, &lhs, 128,
                                   ovnact_put_LOOKUP_ND(ctx->ovnacts));
+        } else if (!strcmp(ctx->lexer->token.s, "lookup_arp_ip")
+                && lexer_lookahead(ctx->lexer) == LEX_T_LPAREN) {
+            parse_lookup_mac_bind_ip(ctx, &lhs, 32,
+                                     ovnact_put_LOOKUP_ARP_IP(ctx->ovnacts));
+        } else if (!strcmp(ctx->lexer->token.s, "lookup_nd_ip")
+                && lexer_lookahead(ctx->lexer) == LEX_T_LPAREN) {
+            parse_lookup_mac_bind_ip(ctx, &lhs, 128,
+                                     ovnact_put_LOOKUP_ND_IP(ctx->ovnacts));
         } else {
             parse_assignment_action(ctx, false, &lhs);
         }
@@ -3566,6 +3621,7 @@ ovnacts_parse(struct lexer *lexer, const struct ovnact_parse_params *pp,
         .lexer = lexer,
         .ovnacts = ovnacts,
         .prereqs = NULL,
+        .scope = WR_DEFAULT,
     };
     if (!lexer->error) {
         parse_actions(&ctx, LEX_T_END);

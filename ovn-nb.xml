@@ -1817,33 +1817,75 @@
       </column>
       <column name="options" key="dnat_force_snat_ip">
         <p>
-          If set, indicates the IP address to use to force SNAT a packet
-          that has already been DNATed in the gateway router.  When multiple
-          gateway routers are configured, a packet can potentially enter any
-          of the gateway router, get DNATted and eventually reach the logical
-          switch port.  For the return traffic to go back to the same gateway
-          router (for unDNATing), the packet needs a SNAT in the first place.
-          This can be achieved by setting the above option with a gateway
-          specific IP address.
+          If set, indicates a set of IP addresses to use to force SNAT a
+          packet that has already been DNATed in the gateway router.  When
+          multiple gateway routers are configured, a packet can potentially
+          enter any of the gateway router, get DNATted and eventually reach the
+          logical switch port.  For the return traffic to go back to the same
+          gateway router (for unDNATing), the packet needs a SNAT in the first
+          place. This can be achieved by setting the above option with a
+          gateway specific set of IP addresses. This option may have exactly
+          one IPv4 and/or one IPv6 address on it, separated by a a space.
         </p>
       </column>
       <column name="options" key="lb_force_snat_ip">
         <p>
-          If set, indicates the IP address to use to force SNAT a packet
+          If set, indicates a set of IP addresses to use to force SNAT a packet
           that has already been load-balanced in the gateway router.  When
           multiple gateway routers are configured, a packet can potentially
           enter any of the gateway routers, get DNATted as part of the load-
           balancing and eventually reach the logical switch port.
           For the return traffic to go back to the same gateway router (for
           unDNATing), the packet needs a SNAT in the first place.  This can be
-          achieved by setting the above option with a gateway specific IP
-          address.
+          achieved by setting the above option with a gateway specific set of
+          IP addresses. This option may have exactly one IPv4 and/or one IPv6
+          address on it, separated by a space character.
         </p>
       </column>
       <column name="options" key="mcast_relay" type='{"type": "boolean"}'>
         <p>
           Enables/disables IP multicast relay between logical switches
           connected to the logical router. Default: False.
+        </p>
+      </column>
+      <column name="options" key="dynamic_neigh_routers" type='{"type": "boolean"}'>
+        <p>
+          If set to <code>true</code>, the router will resolve neighbor
+          routers' MAC addresses only by dynamic ARP/ND, instead of
+          prepopulating static mappings for all neighbor routers in the ARP/ND
+          Resolution stage.  This reduces number of flows, but requires ARP/ND
+          messages to resolve the IP-MAC bindings when needed.  It is
+          <code>false</code> by default.  It is recommended to set to
+          <code>true</code> when a large number of logical routers are
+          connected to the same logical switch but most of them never need to
+          send traffic between each other.
+        </p>
+      </column>
+      <column name="options" key="always_learn_from_arp_request" type='{"type": "boolean"}'>
+        <p>
+          This option controls the behavior when handling IPv4 ARP requests or
+          IPv6 ND-NS packets - whether a dynamic neighbor (MAC binding) entry
+          is added/updated.
+        </p>
+
+        <p>
+          <code>true</code> - Always learn the MAC-IP binding, and add/update
+          the MAC binding entry.
+        </p>
+
+        <p>
+          <code>false</code> - If there is a MAC binding for that IP and the
+          MAC is different, or, if TPA of ARP request belongs to any router
+          port on this router, then update/add that MAC-IP binding. Otherwise,
+          don't update/add entries.
+        </p>
+
+        <p>
+          It is <code>true</code> by default.  It is recommended to set to
+          <code>false</code> when a large number of logical routers are
+          connected to the same logical switch but most of them never need to
+          send traffic between each other, to reduce the size of the MAC
+          binding table.
         </p>
       </column>
     </group>
@@ -2478,6 +2520,22 @@
     <group title="Common Columns">
       <column name="external_ids">
         See <em>External IDs</em> at the beginning of this document.
+      </column>
+    </group>
+
+    <group title="Common options">
+      <column name="options">
+        This column provides general key/value settings. The supported
+        options are described individually below.
+      </column>
+
+      <column name="options" key="ecmp_symmetric_reply">
+        It true, then new traffic that arrives over this route will have
+        its reply traffic bypass ECMP route selection and will be sent out
+        this route instead. Note that this option overrides any rules set
+        in the <ref table="Logical_Router_policy" /> table. This option
+        only works on gateway routers (routers that have
+        <ref column="options" key="chassis" table="Logical_Router" /> set).
       </column>
     </group>
 
