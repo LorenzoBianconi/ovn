@@ -288,10 +288,7 @@ $cluster_remote_port
         set "$@" --sync-from=`cat $active_conf_file`
     fi
 
-    daemon=ovsdb-$db
-    set_cmd_wrapper "$wrapper" $daemon
-
-    "$@" "$file"
+    start_wrapped_daemon "$wrapper" ovsdb-$db "$@"
 
     # Initialize the database if it's NOT joining a cluster.
     if test -z "$cluster_remote_addr"; then
@@ -300,12 +297,6 @@ $cluster_remote_port
 
     if test $mode = cluster; then
         upgrade_cluster "$schema" "unix:$sock"
-    fi
-
-    if test X"$strace" != X; then
-        # Strace doesn't have the -D option so we attach after the fact.
-        setsid $strace -o "$ovn_logdir/$daemon.strace.log" \
-            -p `cat $ovn_rundir/$daemon.pid` > /dev/null 2>&1 &
     fi
 }
 
