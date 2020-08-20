@@ -288,35 +288,7 @@ $cluster_remote_port
         set "$@" --sync-from=`cat $active_conf_file`
     fi
 
-    # wrapper
-    daemon=ovsdb-$db
-    case $wrapper in
-        valgrind)
-            if (valgrind --version) > /dev/null 2>&1; then
-                set valgrind -q --leak-check=full --time-stamp=yes \
-                    --log-file="$ovn_logdir/$daemon.valgrind.log.%p" "$@"
-            else
-                log_failure_msg "valgrind not installed, running $daemon without it"
-            fi
-            ;;
-        strace)
-            if (strace -V) > /dev/null 2>&1; then
-                strace="strace -tt -T -s 256 -ff"
-                if (strace -DV) > /dev/null 2>&1; then
-                    # Has the -D option.
-                    set $strace -D -o "$ovn_logdir/$daemon.strace.log" "$@"
-                    strace=""
-                fi
-            else
-                log_failure_msg "strace not installed, running $daemon without it"
-            fi
-            ;;
-        '')
-            ;;
-        *)
-            log_failure_msg "unknown wrapper $wrapper, running $daemon without it"
-            ;;
-    esac
+    set_cmd_wrapper $wrapper ovsdb-$db
 
     "$@" "$file"
 
