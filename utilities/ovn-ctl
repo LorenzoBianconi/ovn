@@ -288,7 +288,7 @@ $cluster_remote_port
         set "$@" --sync-from=`cat $active_conf_file`
     fi
 
-    start_wrapped_daemon "$wrapper" ovsdb-$db "$@"
+    start_wrapped_daemon "$wrapper" ovsdb-$db "$@" "$file"
 
     # Initialize the database if it's NOT joining a cluster.
     if test -z "$cluster_remote_addr"; then
