@@ -32,8 +32,15 @@ bool ovn_lb_vip_init(struct ovn_lb_vip *lb_vip, const char *lb_key,
 {
     int addr_family;
 
-    if (!ip_address_and_port_from_lb_key(lb_key, &lb_vip->vip_str,
-                                         &lb_vip->vip_port, &addr_family)) {
+    lb_vip->empty_backend_rej = !!strstr(lb_key, ":R");
+    int slen = lb_vip->empty_backend_rej ? strlen(lb_key) - 2 : strlen(lb_key);
+    char *key = xmemdup0(lb_key, slen);
+
+    bool err = !ip_address_and_port_from_lb_key(key, &lb_vip->vip_str,
+                                                &lb_vip->vip_port, &addr_family);
+    free(key);
+
+    if (err) {
         return false;
     }
 
