@@ -6633,6 +6633,10 @@ bfd_monitor_send_msg(struct rconn *swconn, long long int *bfd_time)
             goto next;
         }
 
+        if (entry->state == BFD_STATE_ADMIN_DOWN) {
+            goto next;
+        }
+
         pinctrl_send_bfd_tx_msg(swconn, entry, false);
         unsigned long tx_timeout = MAX(entry->local_min_tx,
                                        entry->remote_min_rx);
