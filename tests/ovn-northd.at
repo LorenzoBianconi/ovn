@@ -2365,6 +2365,10 @@ check ovn-nbctl set bfd $uuid min_tx=1000
 check ovn-nbctl set bfd $uuid min_rx=1000
 check ovn-nbctl set bfd $uuid detect_mult=100
 
+uuid_2=$(fetch_column nb:bfd _uuid logical_port=r0-sw2)
+check ovn-nbctl clear bfd $uuid_2 min_rx
+check_column 1000 bfd min_rx logical_port=r0-sw2
+
 check_column 1000 bfd min_tx logical_port=r0-sw1
 check_column 1000 bfd min_rx logical_port=r0-sw1
 check_column 100 bfd detect_mult logical_port=r0-sw1
