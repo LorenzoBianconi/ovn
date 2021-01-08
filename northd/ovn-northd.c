@@ -7538,6 +7538,10 @@ bfd_cleanup_connections(struct northd_context *ctx, struct hmap *bfd_map)
     }
 }
 
+#define BFD_DEF_MINTX       1000 /* 1s */
+#define BFD_DEF_MINRX       1000 /* 1s */
+#define BFD_DEF_DETECT_MULT 5
+
 static void
 build_bfd_update_sb_conf(const struct nbrec_bfd *nb_bt,
                          const struct sbrec_bfd *sb_bt)
@@ -7554,16 +7558,20 @@ build_bfd_update_sb_conf(const struct nbrec_bfd *nb_bt,
         sbrec_bfd_set_status(sb_bt, nb_bt->status);
     }
 
-    if (nb_bt->n_detect_mult && nb_bt->detect_mult[0] != sb_bt->detect_mult) {
-        sbrec_bfd_set_detect_mult(sb_bt, nb_bt->detect_mult[0]);
+    int detect_mult = nb_bt->n_detect_mult ? nb_bt->detect_mult[0]
+                                           : BFD_DEF_DETECT_MULT;
+    if (detect_mult != sb_bt->detect_mult) {
+        sbrec_bfd_set_detect_mult(sb_bt, detect_mult);
     }
 
-    if (nb_bt->n_min_tx && nb_bt->min_tx[0] != sb_bt->min_tx) {
-        sbrec_bfd_set_min_tx(sb_bt, nb_bt->min_tx[0]);
+    int min_tx = nb_bt->n_min_tx ? nb_bt->min_tx[0] : BFD_DEF_MINTX;
+    if (min_tx != sb_bt->min_tx) {
+        sbrec_bfd_set_min_tx(sb_bt, min_tx);
     }
 
-    if (nb_bt->n_min_rx && nb_bt->min_rx[0] != sb_bt->min_rx) {
-        sbrec_bfd_set_min_rx(sb_bt, nb_bt->min_rx[0]);
+    int min_rx = nb_bt->n_min_rx ? nb_bt->min_rx[0] : BFD_DEF_MINRX;
+    if (min_rx != sb_bt->min_rx) {
+        sbrec_bfd_set_min_rx(sb_bt, min_rx);
     }
 }
 
@@ -7589,10 +7597,6 @@ static int bfd_get_unused_port(unsigned long *bfd_src_ports)
 
     return port + BFD_UDP_SRC_PORT_START;
 }
-
-#define BFD_DEF_MINTX       1000 /* 1s */
-#define BFD_DEF_MINRX       1000 /* 1s */
-#define BFD_DEF_DETECT_MULT 5
 
 static void
 build_bfd_table(struct northd_context *ctx, struct hmap *bfd_connections,
