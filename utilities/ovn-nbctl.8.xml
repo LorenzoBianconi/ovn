@@ -659,7 +659,7 @@
     <dl>
       <dt>[<code>--may-exist</code>] [<code>--policy</code>=<var>POLICY</var>]
         [<code>--ecmp</code>] [<code>--ecmp-symmetric-reply</code>]
-        [<code>--bfd=<var>UUID</var></code>]
+        [<code>--bfd[=<var>UUID</var></code>]]
         <code>lr-route-add</code> <var>router</var>
         <var>prefix</var> <var>nexthop</var> [<var>port</var>]</dt>
       <dd>

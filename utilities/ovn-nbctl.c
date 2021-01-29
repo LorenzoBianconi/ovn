@@ -3980,16 +3980,6 @@ nbctl_lr_route_add(struct ctl_context *ctx)
                     break;
                 }
             }
-            if (!nb_bt) {
-                if (ctx->argc != 5) {
-                    ctl_error(ctx,
-                              "not able to create an entry in the BFD table");
-                    goto cleanup;
-                }
-                nb_bt = nbrec_bfd_insert(ctx->txn);
-                nbrec_bfd_set_dst_ip(nb_bt, next_hop);
-                nbrec_bfd_set_logical_port(nb_bt, ctx->argv[4]);
-            }
         }
     }
 
@@ -4040,15 +4030,24 @@ nbctl_lr_route_add(struct ctl_context *ctx)
             nbrec_logical_router_static_route_verify_nexthop(route);
             nbrec_logical_router_static_route_set_ip_prefix(route, prefix);
             nbrec_logical_router_static_route_set_nexthop(route, next_hop);
-            if (nb_bt) {
-                nbrec_logical_router_static_route_set_bfd(route, nb_bt);
-            }
             if (ctx->argc == 5) {
                 nbrec_logical_router_static_route_set_output_port(
                     route, ctx->argv[4]);
             }
             if (policy) {
                  nbrec_logical_router_static_route_set_policy(route, policy);
+            }
+            if (bfd) {
+                if (!nb_bt) {
+                    if (ctx->argc != 5) {
+                        ctl_error(ctx, "insert entry in the BFD table failed");
+                        goto cleanup;
+                    }
+                    nb_bt = nbrec_bfd_insert(ctx->txn);
+                    nbrec_bfd_set_dst_ip(nb_bt, next_hop);
+                    nbrec_bfd_set_logical_port(nb_bt, ctx->argv[4]);
+                }
+                nbrec_logical_router_static_route_set_bfd(route, nb_bt);
             }
             free(rt_prefix);
             goto cleanup;
@@ -4074,7 +4073,16 @@ nbctl_lr_route_add(struct ctl_context *ctx)
     }
 
     nbrec_logical_router_update_static_routes_addvalue(lr, route);
-    if (nb_bt) {
+    if (bfd) {
+        if (!nb_bt) {
+            if (ctx->argc != 5) {
+                ctl_error(ctx, "insert entry in the BFD table failed");
+                goto cleanup;
+            }
+            nb_bt = nbrec_bfd_insert(ctx->txn);
+            nbrec_bfd_set_dst_ip(nb_bt, next_hop);
+            nbrec_bfd_set_logical_port(nb_bt, ctx->argv[4]);
+        }
         nbrec_logical_router_static_route_set_bfd(route, nb_bt);
     }
 
