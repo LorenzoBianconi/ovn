@@ -7994,18 +7994,23 @@ build_route_prefix_s(const struct in6_addr *prefix, unsigned int plen)
 
 static void
 build_route_match(const struct ovn_port *op_inport, const char *network_s,
-                  int plen, bool is_src_route, bool is_ipv4, struct ds *match,
-                  uint16_t *priority)
+                  int plen, bool is_src_route, bool is_ipv4, bool automatic,
+                  struct ds *match, uint16_t *priority)
 {
+    int prefix_len = plen;
     const char *dir;
     /* The priority here is calculated to implement longest-prefix-match
-     * routing. */
+     * routing. Automatic routes have max priority */
+    if (automatic) {
+        prefix_len = is_ipv4 ? 32 : 128;
+        prefix_len++;
+    }
     if (is_src_route) {
         dir = "src";
-        *priority = plen * 2;
+        *priority = prefix_len * 2;
     } else {
         dir = "dst";
-        *priority = (plen * 2) + 1;
+        *priority = (prefix_len * 2) + 1;
     }
 
     if (op_inport) {
@@ -8172,7 +8177,7 @@ build_ecmp_route_flow(struct hmap *lflows, struct ovn_datapath *od,
 
     char *prefix_s = build_route_prefix_s(&eg->prefix, eg->plen);
     build_route_match(NULL, prefix_s, eg->plen, eg->is_src_route, is_ipv4,
-                      &route_match, &priority);
+                      false, &route_match, &priority);
     free(prefix_s);
 
     struct ds actions = DS_EMPTY_INITIALIZER;
@@ -8246,7 +8251,7 @@ build_ecmp_route_flow(struct hmap *lflows, struct ovn_datapath *od,
 static void
 add_route(struct hmap *lflows, const struct ovn_port *op,
           const char *lrp_addr_s, const char *network_s, int plen,
-          const char *gateway, bool is_src_route,
+          const char *gateway, bool is_src_route, bool automatic,
           const struct ovsdb_idl_row *stage_hint)
 {
     bool is_ipv4 = strchr(network_s, '.') ? true : false;
@@ -8263,7 +8268,7 @@ add_route(struct hmap *lflows, const struct ovn_port *op,
         }
     }
     build_route_match(op_inport, network_s, plen, is_src_route, is_ipv4,
-                      &match, &priority);
+                      automatic, &match, &priority);
 
     struct ds common_actions = DS_EMPTY_INITIALIZER;
     ds_put_format(&common_actions, REG_ECMP_GROUP_ID" = 0; %s = ",
@@ -8319,7 +8324,7 @@ build_static_route_flow(struct hmap *lflows, struct ovn_datapath *od,
 
     char *prefix_s = build_route_prefix_s(&route_->prefix, route_->plen);
     add_route(lflows, out_port, lrp_addr_s, prefix_s, route_->plen,
-              route->nexthop, route_->is_src_route,
+              route->nexthop, route_->is_src_route, false,
               &route->header_);
 
     free(prefix_s);
@@ -9389,14 +9394,14 @@ build_ip_routing_flows_for_lrouter_port(
             add_route(lflows, op, op->lrp_networks.ipv4_addrs[i].addr_s,
                       op->lrp_networks.ipv4_addrs[i].network_s,
                       op->lrp_networks.ipv4_addrs[i].plen, NULL, false,
-                      &op->nbrp->header_);
+                      true, &op->nbrp->header_);
         }
 
         for (int i = 0; i < op->lrp_networks.n_ipv6_addrs; i++) {
             add_route(lflows, op, op->lrp_networks.ipv6_addrs[i].addr_s,
                       op->lrp_networks.ipv6_addrs[i].network_s,
                       op->lrp_networks.ipv6_addrs[i].plen, NULL, false,
-                      &op->nbrp->header_);
+                      true, &op->nbrp->header_);
         }
     }
 }
