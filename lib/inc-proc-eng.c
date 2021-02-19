@@ -283,6 +283,7 @@ engine_recompute(struct engine_node *node, bool forced, bool allowed)
     if (!allowed) {
         VLOG_DBG("node: %s, recompute aborted", node->name);
         engine_set_node_state(node, EN_ABORTED);
+        node->cc.abort++;
         return;
     }
 
@@ -400,4 +401,22 @@ engine_need_run(void)
         }
     }
     return false;
+}
+
+void engine_dump_stats(struct unixctl_conn *conn, int argc OVS_UNUSED,
+                       const char *argv[] OVS_UNUSED, void *arg OVS_UNUSED)
+{
+    struct ds dump = DS_EMPTY_INITIALIZER;
+
+    for (size_t i = 0; i < engine_n_nodes; i++) {
+        struct engine_node *node = engine_nodes[i];
+
+        ds_put_format(&dump, "node\t%s\n", node->name);
+        ds_put_format(&dump, "\trun\t%lu\n", node->cc.run);
+        ds_put_format(&dump, "\tabort\t%lu\n", node->cc.abort);
+        ds_put_format(&dump, "\thandler\t%lu\n", node->cc.handler);
+    }
+    unixctl_command_reply(conn, ds_cstr(&dump));
+
+    ds_destroy(&dump);
 }
