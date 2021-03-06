@@ -1488,11 +1488,11 @@ binding_run(struct binding_ctx_in *b_ctx_in, struct binding_ctx_out *b_ctx_out)
 
         switch (lport_type) {
         case LP_PATCH:
-        case LP_LOCALPORT:
         case LP_VTEP:
             update_local_lport_ids(pb, b_ctx_out);
             break;
 
+        case LP_LOCALPORT:
         case LP_VIF:
             if (is_lport_container(pb)) {
                 consider_container_lport(pb, b_ctx_in, b_ctx_out, qos_map_ptr);
@@ -2329,6 +2329,7 @@ delete_done:
                                pb->datapath->tunnel_key);
 
         switch (lport_type) {
+        case LP_LOCALPORT:
         case LP_VIF:
         case LP_VIRTUAL:
             handled = handle_updated_vif_lport(pb, lport_type, b_ctx_in,
@@ -2336,7 +2337,6 @@ delete_done:
             break;
 
         case LP_PATCH:
-        case LP_LOCALPORT:
         case LP_VTEP:
             update_local_lport_ids(pb, b_ctx_out);
             if (lport_type ==  LP_PATCH) {
