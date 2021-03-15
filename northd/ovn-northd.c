@@ -8690,6 +8690,12 @@ add_router_lb_flow(struct hmap *lflows, struct ovn_datapath *od,
 }
 
 static void
+build_lrouter_force_snat_flows(struct hmap *lflows, struct ovn_datapath *od,
+                               const char *ip_version, const char *ip_addr,
+                               const char *ip_dst, const char *context,
+                               int base_priority);
+
+static void
 build_lrouter_lb_flows(struct hmap *lflows, struct ovn_datapath *od,
                        struct hmap *lbs, struct shash *meter_groups,
                        struct sset *nat_entries, struct ds *match,
@@ -8706,12 +8712,31 @@ build_lrouter_lb_flows(struct hmap *lflows, struct ovn_datapath *od,
             ovn_northd_lb_find(lbs, &nb_lb->header_.uuid);
         ovs_assert(lb);
 
+        struct lport_addresses lb_force_snat_addrs;
+        memset(&lb_force_snat_addrs, 0, sizeof (struct lport_addresses));
+
+        const char *addresses = smap_get(&nb_lb->options, "lb_force_snat_ip");
+        if (addresses) {
+            extract_ip_address(addresses, &lb_force_snat_addrs);
+        }
+
         for (size_t j = 0; j < lb->n_vips; j++) {
             struct ovn_lb_vip *lb_vip = &lb->vips[j];
             struct ovn_northd_lb_vip *lb_vip_nb = &lb->vips_nb[j];
             ds_clear(actions);
             build_lb_vip_actions(lb_vip, lb_vip_nb, actions,
                                  lb->selection_fields, false);
+
+            if (lb_force_snat_addrs.n_ipv4_addrs &&
+                IN6_IS_ADDR_V4MAPPED(&lb_vip->vip)) {
+                build_lrouter_force_snat_flows(lflows, od, "4",
+                    lb_force_snat_addrs.ipv4_addrs[0].addr_s, lb_vip->vip_str,
+                    "lb", 110);
+            } else if (lb_force_snat_addrs.n_ipv6_addrs) {
+                build_lrouter_force_snat_flows(lflows, od, "6",
+                    lb_force_snat_addrs.ipv6_addrs[0].addr_s, lb_vip->vip_str,
+                    "lb", 110);
+            }
 
             if (!sset_contains(&all_ips, lb_vip->vip_str)) {
                 sset_add(&all_ips, lb_vip->vip_str);
@@ -8768,11 +8793,15 @@ build_lrouter_lb_flows(struct hmap *lflows, struct ovn_datapath *od,
                               od->l3redirect_port->json_key);
             }
             bool force_snat_for_lb =
-                lb_force_snat_ip || od->lb_force_snat_router_ip;
+                lb_force_snat_ip || od->lb_force_snat_router_ip ||
+                lb_force_snat_addrs.n_ipv4_addrs ||
+                lb_force_snat_addrs.n_ipv6_addrs;
             add_router_lb_flow(lflows, od, match, actions, prio,
                                force_snat_for_lb, lb_vip, proto,
                                nb_lb, meter_groups, nat_entries);
         }
+
+        destroy_lport_addresses(&lb_force_snat_addrs);
     }
     sset_destroy(&all_ips);
 }
@@ -9207,13 +9236,14 @@ build_lrouter_drop_own_dest(struct ovn_port *op, enum ovn_stage stage,
 static void
 build_lrouter_force_snat_flows(struct hmap *lflows, struct ovn_datapath *od,
                                const char *ip_version, const char *ip_addr,
-                               const char *context)
+                               const char *ip_dst, const char *context,
+                               int base_priority)
 {
     struct ds match = DS_EMPTY_INITIALIZER;
     struct ds actions = DS_EMPTY_INITIALIZER;
     ds_put_format(&match, "ip%s && ip%s.dst == %s",
                   ip_version, ip_version, ip_addr);
-    ovn_lflow_add(lflows, od, S_ROUTER_IN_UNSNAT, 110,
+    ovn_lflow_add(lflows, od, S_ROUTER_IN_UNSNAT, base_priority + 10,
                   ds_cstr(&match), "ct_snat;");
 
     /* Higher priority rules to force SNAT with the IP addresses
@@ -9222,8 +9252,11 @@ build_lrouter_force_snat_flows(struct hmap *lflows, struct ovn_datapath *od,
     ds_clear(&match);
     ds_put_format(&match, "flags.force_snat_for_%s == 1 && ip%s",
                   context, ip_version);
+    if (ip_dst) {
+        ds_put_format(&match, " && ip%s.dst == %s", ip_version, ip_dst);
+    }
     ds_put_format(&actions, "ct_snat(%s);", ip_addr);
-    ovn_lflow_add(lflows, od, S_ROUTER_OUT_SNAT, 100,
+    ovn_lflow_add(lflows, od, S_ROUTER_OUT_SNAT, base_priority,
                   ds_cstr(&match), ds_cstr(&actions));
 
     ds_destroy(&match);
@@ -11661,22 +11694,24 @@ build_lrouter_nat_defrag_and_lb(struct ovn_datapath *od,
             if (od->dnat_force_snat_addrs.n_ipv4_addrs) {
                 build_lrouter_force_snat_flows(lflows, od, "4",
                     od->dnat_force_snat_addrs.ipv4_addrs[0].addr_s,
-                    "dnat");
+                    NULL, "dnat", 100);
             }
             if (od->dnat_force_snat_addrs.n_ipv6_addrs) {
                 build_lrouter_force_snat_flows(lflows, od, "6",
                     od->dnat_force_snat_addrs.ipv6_addrs[0].addr_s,
-                    "dnat");
+                    NULL, "dnat", 100);
             }
         }
         if (lb_force_snat_ip) {
             if (od->lb_force_snat_addrs.n_ipv4_addrs) {
                 build_lrouter_force_snat_flows(lflows, od, "4",
-                    od->lb_force_snat_addrs.ipv4_addrs[0].addr_s, "lb");
+                    od->lb_force_snat_addrs.ipv4_addrs[0].addr_s, NULL,
+                    "lb", 100);
             }
             if (od->lb_force_snat_addrs.n_ipv6_addrs) {
                 build_lrouter_force_snat_flows(lflows, od, "6",
-                    od->lb_force_snat_addrs.ipv6_addrs[0].addr_s, "lb");
+                    od->lb_force_snat_addrs.ipv6_addrs[0].addr_s, NULL,
+                    "lb", 100);
             }
         }
     }
