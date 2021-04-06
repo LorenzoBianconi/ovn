@@ -6026,8 +6026,8 @@ for (RouterLBVIP(
             var est_match = "ct.est && " ++ __match in
             var actions =
                 match (snat_for_lb) {
-                    2 -> "flags.skip_snat_for_lb = 1; ct_dnat;",
-                    1 -> "flags.force_snat_for_lb = 1; ct_dnat;",
+                    SkipSNAT -> "flags.skip_snat_for_lb = 1; ct_dnat;",
+                    ForceSNAT -> "flags.force_snat_for_lb = 1; ct_dnat;",
                     _ -> "ct_dnat;"
                 } in
             Flow(.logical_datapath = lr._uuid,
@@ -6088,8 +6088,8 @@ for (RouterLBVIP(
                 "is_chassis_resident(${redirect_port_name})" in
             var action =
                 match (snat_for_lb) {
-                    2 -> "flags.skip_snat_for_lb = 1; ct_dnat;",
-                    1 -> "flags.force_snat_for_lb = 1; ct_dnat;",
+                    SkipSNAT -> "flags.skip_snat_for_lb = 1; ct_dnat;",
+                    ForceSNAT -> "flags.force_snat_for_lb = 1; ct_dnat;",
                     _ -> "ct_dnat;"
                 } in
             Flow(.logical_datapath = lr._uuid,
@@ -6126,8 +6126,8 @@ Flow(.logical_datapath = r.lr._uuid,
           },
     var priority = if (lbvip.vip_port != 0) 120 else 110,
     var force_snat = match (snat_for_lb(r.lr, lb)) {
-        2 -> "flags.skip_snat_for_lb = 1; ",
-        1 -> "flags.force_snat_for_lb = 1; ",
+        SkipSNAT -> "flags.skip_snat_for_lb = 1; ",
+        ForceSNAT -> "flags.force_snat_for_lb = 1; ",
         _ -> ""
     },
     var actions = build_lb_vip_actions(lbvip, s_ROUTER_OUT_SNAT(), force_snat).
