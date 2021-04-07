@@ -10301,7 +10301,8 @@ static void
 build_check_pkt_len_flows_for_lrouter(
         struct ovn_datapath *od, struct hmap *lflows,
         struct hmap *ports,
-        struct ds *match, struct ds *actions)
+        struct ds *match, struct ds *actions,
+        struct shash *meter_groups)
 {
     if (od->nbr) {
 
@@ -10333,6 +10334,13 @@ build_check_pkt_len_flows_for_lrouter(
                                     ds_cstr(match), ds_cstr(actions),
                                     &od->l3dgw_port->nbrp->header_);
 
+            char *meter, *meter_name = xasprintf("meter-%s", od->nbr->name);
+            if (meter_groups && shash_find(meter_groups, meter_name)) {
+                meter = meter_name;
+            } else {
+                meter = "";
+            }
+
             for (size_t i = 0; i < od->nbr->n_ports; i++) {
                 struct ovn_port *rp = ovn_port_find(ports,
                                                     od->nbr->ports[i]->name);
@@ -10349,7 +10357,7 @@ build_check_pkt_len_flows_for_lrouter(
                     ds_clear(actions);
                     /* Set icmp4.frag_mtu to gw_mtu */
                     ds_put_format(actions,
-                        "icmp4_error {"
+                        "icmp4_error { meter = \"%s\"; "
                         REGBIT_EGRESS_LOOPBACK" = 1; "
                         "eth.dst = %s; "
                         "ip4.dst = ip4.src; "
@@ -10359,7 +10367,7 @@ build_check_pkt_len_flows_for_lrouter(
                         "icmp4.code = 4; /* Frag Needed and DF was Set. */ "
                         "icmp4.frag_mtu = %d; "
                         "next(pipeline=ingress, table=%d); };",
-                        rp->lrp_networks.ea_s,
+                        meter, rp->lrp_networks.ea_s,
                         rp->lrp_networks.ipv4_addrs[0].addr_s,
                         gw_mtu,
                         ovn_stage_get_table(S_ROUTER_IN_ADMISSION));
@@ -10378,7 +10386,7 @@ build_check_pkt_len_flows_for_lrouter(
                     ds_clear(actions);
                     /* Set icmp6.frag_mtu to gw_mtu */
                     ds_put_format(actions,
-                        "icmp6_error {"
+                        "icmp6_error { meter = \"%s\"; "
                         REGBIT_EGRESS_LOOPBACK" = 1; "
                         "eth.dst = %s; "
                         "ip6.dst = ip6.src; "
@@ -10388,7 +10396,7 @@ build_check_pkt_len_flows_for_lrouter(
                         "icmp6.code = 0; "
                         "icmp6.frag_mtu = %d; "
                         "next(pipeline=ingress, table=%d); };",
-                        rp->lrp_networks.ea_s,
+                        meter, rp->lrp_networks.ea_s,
                         rp->lrp_networks.ipv6_addrs[0].addr_s,
                         gw_mtu,
                         ovn_stage_get_table(S_ROUTER_IN_ADMISSION));
@@ -10398,6 +10406,7 @@ build_check_pkt_len_flows_for_lrouter(
                                             &rp->nbrp->header_);
                 }
             }
+            free(meter_name);
         }
     }
 }
@@ -11783,7 +11792,8 @@ build_lswitch_and_lrouter_iterate_by_od(struct ovn_datapath *od,
     build_ingress_policy_flows_for_lrouter(od, lsi->lflows, lsi->ports);
     build_arp_resolve_flows_for_lrouter(od, lsi->lflows);
     build_check_pkt_len_flows_for_lrouter(od, lsi->lflows, lsi->ports,
-                                          &lsi->match, &lsi->actions);
+                                          &lsi->match, &lsi->actions,
+                                          lsi->meter_groups);
     build_gateway_redirect_flows_for_lrouter(od, lsi->lflows, &lsi->match,
                                              &lsi->actions);
     build_arp_request_flows_for_lrouter(od, lsi->lflows, &lsi->match,

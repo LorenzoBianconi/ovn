@@ -198,7 +198,8 @@ struct action_context {
     enum expr_write_scope scope;  /* Current writeability scope */
 };
 
-static void parse_actions(struct action_context *, enum lex_type sentinel);
+static void parse_actions(struct action_context *, enum lex_type sentinel,
+                          char **meter);
 
 static void parse_nested_action(struct action_context *ctx,
                                 enum ovnact_type type,
@@ -1428,7 +1429,8 @@ parse_nested_action(struct action_context *ctx, enum ovnact_type type,
         .depth = ctx->depth + 1,
         .scope = scope,
     };
-    parse_actions(&inner_ctx, LEX_T_RCURLY);
+    char *meter = NULL;
+    parse_actions(&inner_ctx, LEX_T_RCURLY, &meter);
 
     if (prereq) {
         /* XXX Not really sure what we should do with prerequisites for "arp"
@@ -1452,6 +1454,9 @@ parse_nested_action(struct action_context *ctx, enum ovnact_type type,
                                         OVNACT_ALIGN(sizeof *on));
     on->nested_len = nested.size;
     on->nested = ofpbuf_steal_data(&nested);
+    if (meter) {
+        on->meter = meter;
+    }
 }
 
 static void
@@ -1531,6 +1536,9 @@ format_nested_action(const struct ovnact_nest *on, const char *name,
                      struct ds *s)
 {
     ds_put_format(s, "%s { ", name);
+    if (on->meter) {
+        ds_put_format(s, "meter = \"%s\", ", on->meter);
+    }
     ovnacts_format(on->nested, on->nested_len, s);
     ds_put_format(s, " };");
 }
@@ -1642,12 +1650,23 @@ encode_nested_actions(const struct ovnact_nest *on,
     struct ofpbuf inner_ofpacts = OFPBUF_STUB_INITIALIZER(inner_ofpacts_stub);
     ovnacts_encode(on->nested, on->nested_len, ep, &inner_ofpacts);
 
+    uint32_t meter_id = NX_CTLR_NO_METER;
+    if (on->meter) {
+        meter_id = ovn_extend_table_assign_id(ep->meter_table, on->meter,
+                                              ep->lflow_uuid);
+        free(on->meter);
+        if (meter_id == EXT_TABLE_ID_INVALID) {
+            VLOG_WARN("Unable to assign id for trigger meter: %s",
+                      on->meter);
+            return;
+        }
+    }
     /* Add a "controller" action with the actions nested inside "{...}",
      * converted to OpenFlow, as its userdata.  ovn-controller will convert the
      * packet to ARP or NA and then send the packet and actions back to the
      * switch inside an OFPT_PACKET_OUT message. */
     size_t oc_offset = encode_start_controller_op(opcode, false,
-                                                  NX_CTLR_NO_METER, ofpacts);
+                                                  meter_id, ofpacts);
     ofpacts_put_openflow_actions(inner_ofpacts.data, inner_ofpacts.size,
                                  ofpacts, OFP15_VERSION);
     encode_finish_controller_op(oc_offset, ofpacts);
@@ -4079,7 +4098,8 @@ parse_action(struct action_context *ctx)
 }
 
 static void
-parse_actions(struct action_context *ctx, enum lex_type sentinel)
+parse_actions(struct action_context *ctx, enum lex_type sentinel,
+              char **meter)
 {
     /* "drop;" by itself is a valid (empty) set of actions, but it can't be
      * combined with other actions because that doesn't make sense. */
@@ -4090,6 +4110,22 @@ parse_actions(struct action_context *ctx, enum lex_type sentinel)
         lexer_get(ctx->lexer);  /* Skip ";". */
         lexer_force_match(ctx->lexer, sentinel);
         return;
+    }
+
+    /* metering: meter = "meter-name", */
+    if (ctx->lexer->token.type == LEX_T_ID &&
+        !strcmp(ctx->lexer->token.s, "meter") &&
+        lexer_lookahead(ctx->lexer) == LEX_T_EQUALS) {
+        lexer_get(ctx->lexer); /* skip "meter" */
+        lexer_get(ctx->lexer); /* skip "=" */
+        if (ctx->lexer->token.type != LEX_T_STRING) {
+            return;
+        }
+        *meter = xstrdup(ctx->lexer->token.s);
+        lexer_get(ctx->lexer);
+        if (!lexer_force_match(ctx->lexer, LEX_T_SEMICOLON)) {
+            return;
+        }
     }
 
     while (!lexer_match(ctx->lexer, sentinel)) {
@@ -4128,7 +4164,7 @@ ovnacts_parse(struct lexer *lexer, const struct ovnact_parse_params *pp,
         .scope = WR_DEFAULT,
     };
     if (!lexer->error) {
-        parse_actions(&ctx, LEX_T_END);
+        parse_actions(&ctx, LEX_T_END, NULL);
     }
 
     if (!lexer->error) {

@@ -298,6 +298,7 @@ struct ovnact_nest {
     struct ovnact ovnact;
     struct ovnact *nested;
     size_t nested_len;
+    char *meter;
 };
 
 /* OVNACT_GET_ARP, OVNACT_GET_ND. */

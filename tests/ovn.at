@@ -16020,6 +16020,8 @@ awk '{print $3}')
 ovn-sbctl create MAC_Binding ip=172.168.0.3 datapath=$dp_uuid \
 logical_port=lr0-public mac="00\:00\:00\:12\:af\:11"
 
+ovn-nbctl --wait=hv meter-add meter-lr0 drop 100 pktps 10
+
 # Try different gateway mtus and send a 142-byte packet (corresponding
 # to a 124-byte MTU).  If the MTU is less than 124, ovn-controller
 # should send icmp host not reachable with pmtu set to $mtu.
