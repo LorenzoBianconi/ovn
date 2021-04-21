@@ -1445,6 +1445,153 @@
       </dd>
     </dl>
 
+    <h2> Control Plane Protection Policy commands</h2>
+    <p>
+      These commands manage meters configured in <ref table="Copp"/> table
+      linking them to logical datapaths through <code>copp</code> column in
+      <ref table="Logical_Switch" /> or <ref table="Logical_Router" /> tables.
+      Protocol packets for which CoPP is enforced when sending packets to
+      ovn-controller (if configured):
+      <ul>
+          <li>ARP</li>
+          <li>ND_NS</li>
+          <li>ND_NA</li>
+          <li>ND_RA</li>
+          <li>ND</li>
+          <li>DNS</li>
+          <li>IGMP</li>
+          <li>packets that require ARP resolution before forwarding</li>
+          <li>packets that require ND_NS before forwarding</li>
+          <li>packets that need to be replied to with ICMP Errors</li>
+          <li>packets that need to be replied to with TCP RST</li>
+          <li>packets that need to be replied to with DHCP_OPTS</li>
+          <li>BFD</li>
+      </ul>
+    </p>
+
+    <dl>
+      <dt><code>ls-copp-add</code> <var>switch</var> <var>proto</var>
+      <var>meter</var></dt>
+      <dd>
+        Adds the control <code>proto</code> to <code>meter</code> mapping
+        to the <code>switch</code> control plane protection policy. If no
+        policy exists yet, it creates one. If a mapping already existed for
+        <code>proto</code>, this will overwrite it.
+      </dd>
+
+      <dt><code>ls-copp-del</code> <var>switch</var> [<var>proto</var>]</dt>
+      <dd>
+        Removes the control <code>proto</code> mapping from the
+        <code>switch</code> control plane protection policy. If
+        <code>proto</code> is not specified, the whole control plane
+        protection policy is destroyed.
+      </dd>
+
+      <dt><code>ls-copp-list</code> <var>switch</var></dt>
+      <dd>
+        Display the current control plane protection policy for
+        <code>switch</code>.
+      </dd>
+
+      <dt><code>lsp-copp-add</code> <var>proto</var> <var>proto</var>
+      <var>meter</var></dt>
+      <dd>
+        Adds the control <code>proto</code> to <code>meter</code> mapping
+        to the <code>port</code> control plane protection policy. If no
+        policy exists yet, it creates one. If a mapping already existed for
+        <code>proto</code>, this will overwrite it.
+      </dd>
+
+      <dt><code>lsp-copp-del</code> <var>port</var> [<var>proto</var>]</dt>
+      <dd>
+        Removes the control <code>proto</code> mapping from the
+        <code>port</code> control plane protection policy. If
+        <code>proto</code> is not specified, the whole control plane
+        protection policy is destroyed.
+      </dd>
+      <dt><code>lsp-copp-list</code> <var>port</var></dt>
+      <dd>
+        Display the current control plane protection policy for
+        <code>port</code>.
+      </dd>
+
+      <dt><code>lr-copp-add</code> <var>router</var> <var>proto</var>
+      <var>meter</var></dt>
+      <dd>
+        Adds the control <code>proto</code> to <code>meter</code> mapping
+        to the <code>router</code> control plane protection policy. If no
+        policy exists yet, it creates one. If a mapping already existed for
+        <code>proto</code>, this will overwrite it.
+      </dd>
+
+      <dt><code>lr-copp-del</code> <var>router</var> [<var>proto</var>]</dt>
+      <dd>
+        Removes the control <code>proto</code> mapping from the
+        <code>router</code> control plane protection policy. If
+        <code>proto</code> is not specified, the whole control plane
+        protection policy is destroyed.
+      </dd>
+
+      <dt><code>lr-copp-list</code> <var>router</var></dt>
+      <dd>
+        Display the current control plane protection policy for
+        <code>router</code>.
+      </dd>
+
+      <dt><code>lrp-copp-add</code> <var>proto</var> <var>proto</var>
+      <var>meter</var></dt>
+      <dd>
+        Adds the control <code>proto</code> to <code>meter</code> mapping
+        to the <code>port</code> control plane protection policy. If no
+        policy exists yet, it creates one. If a mapping already existed for
+        <code>proto</code>, this will overwrite it.
+      </dd>
+
+      <dt><code>lrp-copp-del</code> <var>port</var> [<var>proto</var>]</dt>
+      <dd>
+        Removes the control <code>proto</code> mapping from the
+        <code>port</code> control plane protection policy. If
+        <code>proto</code> is not specified, the whole control plane
+        protection policy is destroyed.
+      </dd>
+      <dt><code>lrp-copp-list</code> <var>port</var></dt>
+      <dd>
+        Display the current control plane protection policy for
+        <code>port</code>.
+      </dd>
+    </dl>
+
+    <h1>Database Commands</h1>
+    <p>These commands query and modify the contents of <code>ovsdb</code> tables.
+    They are a slight abstraction of the <code>ovsdb</code> interface and
+    as such they operate at a lower level than other <code>ovn-nbctl</code> commands.</p>
+    <p><var>Identifying Tables, Records, and Columns</var></p>
+    <p>Each of these commands has a <var>table</var> parameter to identify a table
+    within the database.  Many of them also take a <var>record</var> parameter
+    that identifies a particular record within a table.  The <var>record</var>
+    parameter may be the UUID for a record, which may be abbreviated to its
+    first 4 (or more) hex digits, as long as that is unique.  Many tables offer
+    additional ways to identify records.  Some commands also take
+    <var>column</var> parameters that identify a particular field within the
+    records in a table.</p>
+
+    <p>
+      For a list of tables and their columns, see <code>ovn-nb</code>(5) or
+      see the table listing from the <code>--help</code> option.
+    </p>
+
+    <p>
+      Record names must be specified in full and with correct capitalization,
+      except that UUIDs may be abbreviated to their first 4 (or more) hex
+      digits, as long as that is unique within the table.  Names of tables and
+      columns are not case-sensitive, and <code>-</code> and <code>_</code> are
+      treated interchangeably.  Unique abbreviations of table and column names
+      are acceptable, e.g. <code>d</code> or <code>dhcp</code> is sufficient
+      to identify the <code>DHCP_Options</code> table.
+    </p>
+
+    <xi:include href="lib/db-ctl-base.xml" xmlns:xi="http://www.w3.org/2003/XInclude"/>
+
     <h2>Synchronization Commands</h2>
 
     <dl>
