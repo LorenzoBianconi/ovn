@@ -1193,6 +1193,11 @@ consider_port_binding(struct ovsdb_idl_index *sbrec_port_binding_by_name,
 
         load_logical_ingress_metadata(binding, &zone_ids, ofpacts_p);
 
+        if (!strcmp(binding->type, "localport")) {
+            /* mark the packet as incoming from a localport */
+            put_load(1, MFF_LOG_FLAGS, MLF_LOCALPORT_BIT, 1, ofpacts_p);
+        }
+
         /* Resubmit to first logical ingress pipeline table. */
         put_resubmit(OFTABLE_LOG_INGRESS_PIPELINE, ofpacts_p);
         ofctrl_add_flow(flow_table, OFTABLE_PHY_TO_LOG,
@@ -1806,8 +1811,6 @@ physical_run(struct physical_ctx *p_ctx,
      * 33 for local delivery. */
     match_init_catchall(&match);
     ofpbuf_clear(&ofpacts);
-    /* mark the packet as incoming from a localport */
-    put_load(1, MFF_LOG_FLAGS, MLF_LOCALPORT_BIT, 1, &ofpacts);
     put_resubmit(OFTABLE_LOCAL_OUTPUT, &ofpacts);
     const char *localport;
     SSET_FOR_EACH (localport, p_ctx->local_lports) {
