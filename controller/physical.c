@@ -1256,7 +1256,7 @@ consider_port_binding(struct ovsdb_idl_index *sbrec_port_binding_by_name,
                                               ofport, flow_table);
         }
 
-        /* Table 33, priority 160.
+        /* Table 34, priority 160.
          * =======================
          *
          * Do not forward local traffic from a localport to a localnet port.
@@ -1269,8 +1269,9 @@ consider_port_binding(struct ovsdb_idl_index *sbrec_port_binding_by_name,
             match_set_reg(&match, MFF_LOG_OUTPORT - MFF_REG0, port_key);
             match_set_reg_masked(&match, MFF_LOG_FLAGS - MFF_REG0,
                                  MLF_LOCALPORT, MLF_LOCALPORT);
-            ofctrl_add_flow(flow_table, OFTABLE_LOCAL_OUTPUT, 160, 0,
-                            &match, ofpacts_p, hc_uuid);
+            ofctrl_add_flow(flow_table, OFTABLE_CHECK_LOOPBACK, 160,
+                            binding->header_.uuid.parts[0], &match,
+                            ofpacts_p, &binding->header_.uuid);
         }
 
     } else if (!tun && !is_ha_remote) {
