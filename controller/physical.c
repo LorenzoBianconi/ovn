@@ -1251,6 +1251,24 @@ consider_port_binding(struct ovsdb_idl_index *sbrec_port_binding_by_name,
                                               ofport, flow_table);
         }
 
+        /* Table 33, priority 160.
+         * =======================
+         *
+         * Do not forward local traffic from a localport to a localnet port.
+         */
+        if (!strcmp(binding->type, "localnet")) {
+            /* do not forward traffic from localport to localnet port */
+            match_init_catchall(&match);
+            ofpbuf_clear(ofpacts_p);
+            match_set_metadata(&match, htonll(dp_key));
+            match_set_reg(&match, MFF_LOG_OUTPORT - MFF_REG0, port_key);
+            match_set_reg_masked(&match, MFF_LOG_FLAGS - MFF_REG0,
+                                 MLF_LOCALPORT, MLF_LOCALPORT);
+            ofctrl_add_flow(flow_table, OFTABLE_LOCAL_OUTPUT, 160,
+                            binding->header_.uuid.parts[0], &match, ofpacts_p,
+                            &binding->header_.uuid);
+        }
+
     } else if (!tun && !is_ha_remote) {
         /* Remote port connected by localnet port */
         /* Table 33, priority 100.
@@ -1789,6 +1807,8 @@ physical_run(struct physical_ctx *p_ctx,
      * 33 for local delivery. */
     match_init_catchall(&match);
     ofpbuf_clear(&ofpacts);
+    /* mark the packet as incoming from a localport */
+    put_load(1, MFF_LOG_FLAGS, MLF_LOCALPORT_BIT, 1, &ofpacts);
     put_resubmit(OFTABLE_LOCAL_OUTPUT, &ofpacts);
     const char *localport;
     SSET_FOR_EACH (localport, p_ctx->local_lports) {
