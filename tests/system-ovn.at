@@ -6071,7 +6071,6 @@ ADD_NAMESPACES(server)
 NS_CHECK_EXEC([server], [ip link set dev lo up])
 ADD_VETH(s1, server, br-ext, "172.16.1.50/24", "f0:00:00:01:02:05", \
          "172.16.1.1")
-NS_CHECK_EXEC([server], [ip addr add 1000::b/64 dev s1])
 
 AT_CHECK([ovs-vsctl set Open_vSwitch . external-ids:ovn-bridge-mappings=phynet:br-ext])
 check ovn-nbctl lsp-add public public1 \
