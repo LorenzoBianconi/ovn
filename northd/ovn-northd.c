@@ -4435,6 +4435,13 @@ build_port_security_ip(enum ovn_pipeline pipeline, struct ovn_port *op,
             if (pipeline == P_IN) {
                 /* Permit use of the unspecified address for DHCP discovery */
                 struct ds dhcp_match = DS_EMPTY_INITIALIZER;
+
+                if (!strcmp(op->nbsp->type, "virtual")) {
+                    ds_put_format(&dhcp_match, "is_chassis_resident(%s) && ",
+                                  op->json_key);
+                    ds_put_format(&match, "is_chassis_resident(%s) && ",
+                                  op->json_key);
+                }
                 ds_put_format(&dhcp_match, "inport == %s"
                               " && eth.src == %s"
                               " && ip4.src == 0.0.0.0"
