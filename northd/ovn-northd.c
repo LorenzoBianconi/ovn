@@ -56,8 +56,11 @@
 #include "util.h"
 #include "uuid.h"
 #include "openvswitch/vlog.h"
+#include "stopwatch.h"
 
 VLOG_DEFINE_THIS_MODULE(ovn_northd);
+
+#define NORTHD_LB_STOPWATCH_NAME "ovn-northd-lb-flow-generation"
 
 static unixctl_cb_func ovn_northd_exit;
 static unixctl_cb_func ovn_northd_pause;
@@ -12320,8 +12323,14 @@ build_lswitch_and_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
             build_lswitch_arp_nd_service_monitor(lb, lsi.lflows,
                                                  &lsi.actions,
                                                  &lsi.match);
+        }
+
+        stopwatch_start(NORTHD_LB_STOPWATCH_NAME, time_msec());
+        HMAP_FOR_EACH (lb, hmap_node, lbs) {
             build_lrouter_flows_for_lb(lb, lsi.lflows, lsi.meter_groups);
         }
+        stopwatch_stop(NORTHD_LB_STOPWATCH_NAME, time_msec());
+
         HMAP_FOR_EACH (igmp_group, hmap_node, igmp_groups) {
             build_lswitch_ip_mcast_igmp_mld(igmp_group,
                                             lsi.lflows,
@@ -14540,6 +14549,8 @@ main(int argc, char *argv[])
 
     /* Main loop. */
     exiting = false;
+
+    stopwatch_create(NORTHD_LB_STOPWATCH_NAME, SW_MS);
 
     while (!exiting) {
         update_ssl_config();
