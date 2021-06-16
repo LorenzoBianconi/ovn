@@ -6188,6 +6188,9 @@ AT_SKIP_IF([test $HAVE_TCPDUMP = no])
 AT_SKIP_IF([test $HAVE_SCAPY = no])
 AT_KEYWORDS([ovn-copp])
 
+dnl This test is not suported by ovn-northd-ddlog yet.
+AT_SKIP_IF([test NORTHD_TYPE = ovn-northd-ddlog && test "$RUN_ANYWAY" != yes])
+
 ovn_start
 OVS_TRAFFIC_VSWITCHD_START()
 
