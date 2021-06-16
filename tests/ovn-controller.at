@@ -606,6 +606,10 @@ AT_CLEANUP
 OVN_FOR_EACH_NORTHD([
 AT_SETUP([ovn-controller - ovn action metering])
 AT_KEYWORDS([action-metering])
+
+dnl This test is not suported by ovn-northd-ddlog yet.
+AT_SKIP_IF([test NORTHD_TYPE = ovn-northd-ddlog && test "$RUN_ANYWAY" != yes])
+
 ovn_start
 
 net_add n1
