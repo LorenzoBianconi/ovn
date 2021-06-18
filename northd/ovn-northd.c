@@ -56,8 +56,11 @@
 #include "util.h"
 #include "uuid.h"
 #include "openvswitch/vlog.h"
+#include "stopwatch.h"
 
 VLOG_DEFINE_THIS_MODULE(ovn_northd);
+
+#define NORTHD_LB_STOPWATCH_NAME "ovn-northd-lb-flow-generation"
 
 static unixctl_cb_func ovn_northd_exit;
 static unixctl_cb_func ovn_northd_pause;
@@ -6121,6 +6124,7 @@ build_stateful(struct ovn_datapath *od, struct hmap *lflows, struct hmap *lbs)
      * a higher priority rule for load balancing below also commits the
      * connection, so it is okay if we do not hit the above match on
      * REGBIT_CONNTRACK_COMMIT. */
+#if 0
     for (int i = 0; i < od->nbs->n_load_balancer; i++) {
         struct ovn_northd_lb *lb =
             ovn_northd_lb_find(lbs, &od->nbs->load_balancer[i]->header_.uuid);
@@ -6128,6 +6132,7 @@ build_stateful(struct ovn_datapath *od, struct hmap *lflows, struct hmap *lbs)
         ovs_assert(lb);
         build_lb_rules(od, lflows, lb);
     }
+#endif
 }
 
 static void
@@ -6895,7 +6900,7 @@ build_lswitch_lflows_pre_acl_and_acl(struct ovn_datapath *od,
         ls_get_acl_flags(od);
 
         build_pre_acls(od, port_groups, lflows);
-        build_pre_lb(od, lflows, meter_groups, lbs);
+        //build_pre_lb(od, lflows, meter_groups, lbs);
         build_pre_stateful(od, lflows);
         build_acl_hints(od, lflows);
         build_acls(od, lflows, port_groups, meter_groups);
@@ -12198,6 +12203,21 @@ build_lswitch_and_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
         /* Combined build - all lflow generation from lswitch and lrouter
          * will move here and will be reogranized by iterator type.
          */
+        stopwatch_start(NORTHD_LB_STOPWATCH_NAME, time_msec());
+        HMAP_FOR_EACH (od, key_node, datapaths) {
+            if (!od->nbs) {
+                continue;
+            }
+            build_pre_lb(od, lflows, meter_groups, lbs);
+            for (int i = 0; i < od->nbs->n_load_balancer; i++) {
+                struct ovn_northd_lb *lb =
+                    ovn_northd_lb_find(lbs, &od->nbs->load_balancer[i]->header_.uuid);
+
+                ovs_assert(lb);
+                build_lb_rules(od, lflows, lb);
+            }
+        }
+        stopwatch_stop(NORTHD_LB_STOPWATCH_NAME, time_msec());
         HMAP_FOR_EACH (od, key_node, datapaths) {
             build_lswitch_and_lrouter_iterate_by_od(od, &lsi);
         }
@@ -14429,6 +14449,8 @@ main(int argc, char *argv[])
 
     /* Main loop. */
     exiting = false;
+
+    stopwatch_create(NORTHD_LB_STOPWATCH_NAME, SW_MS);
 
     while (!exiting) {
         update_ssl_config();
