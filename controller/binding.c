@@ -574,13 +574,13 @@ remove_related_lport(const struct sbrec_port_binding *pb,
     }
 }
 
-static void
+static bool
 update_active_pb_ipv6_pd(const struct sbrec_port_binding *pb,
                          struct binding_ctx_out *b_ctx)
 {
     const char *ipv6_pfd = smap_get(&pb->options, "ipv6_prefix_delegation");
     if (!ipv6_pfd) {
-        return;
+        return true;
     }
 
     struct pb_ipv6_active_pd *pb_ipv6 = get_pb_ipv6_active_pd(
@@ -590,7 +590,7 @@ update_active_pb_ipv6_pd(const struct sbrec_port_binding *pb,
                 b_ctx->local_datapaths,
                 pb->datapath->tunnel_key);
         if (!ld) {
-            return;
+            return false;
         }
 
         pb_ipv6 = xzalloc(sizeof *pb_ipv6);
@@ -601,6 +601,7 @@ update_active_pb_ipv6_pd(const struct sbrec_port_binding *pb,
     } else if (pb_ipv6 && !strcmp(ipv6_pfd, "false")) {
         hmap_remove(b_ctx->local_active_ports_ipv6_pd, &pb_ipv6->hmap_node);
     }
+    return true;
 }
 
 /* Corresponds to each Port_Binding.type. */
@@ -2513,7 +2514,10 @@ delete_done:
             continue;
         }
 
-        update_active_pb_ipv6_pd(pb, b_ctx_out);
+        handled = update_active_pb_ipv6_pd(pb, b_ctx_out);
+        if (!handled) {
+            break;
+        }
 
         enum en_lport_type lport_type = get_lport_type(pb);
 
