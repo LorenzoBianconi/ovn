@@ -11647,7 +11647,6 @@ build_lrouter_ipv4_ip_input(struct ovn_port *op,
                                    &op->nbrp->header_, lflows);
         }
 
-        const char *ip_address;
         if (sset_count(&op->od->lb_ips_v4)) {
             ds_clear(match);
             if (op == op->od->l3dgw_port) {
@@ -11668,17 +11667,40 @@ build_lrouter_ipv4_ip_input(struct ovn_port *op,
             ds_destroy(&load_balancer_ips_v4);
         }
 
-        SSET_FOR_EACH (ip_address, &op->od->lb_ips_v6) {
+        if (sset_count(&op->od->lb_ips_v6)) {
             ds_clear(match);
+            ds_clear(actions);
+
+            struct ds load_balancer_ips_v6 = DS_EMPTY_INITIALIZER;
+
+            ds_put_cstr(&load_balancer_ips_v6, "{ ");
+            ds_put_and_free_cstr(&load_balancer_ips_v6,
+                                 sset_join(&op->od->lb_ips_v6, ", ", " }"));
+
+            ds_put_format(match, "inport == %s && nd_ns && nd.target == %s",
+                          op->json_key, ds_cstr(&load_balancer_ips_v6));
             if (op == op->od->l3dgw_port) {
-                ds_put_format(match, "is_chassis_resident(%s)",
+                ds_put_format(match, " && is_chassis_resident(%s)",
                               op->od->l3redirect_port->json_key);
             }
+            ds_put_format(actions,
+                          "nd_na { "
+                            "eth.src = %s; "
+                            "ip6.src = nd.target; "
+                            "nd.tll = %s; "
+                            "outport = inport; "
+                            "flags.loopback = 1; "
+                            "output; "
+                          "};",
+                          REG_INPORT_ETH_ADDR,
+                          REG_INPORT_ETH_ADDR);
+            ovn_lflow_add_with_hint__(lflows, op->od, S_ROUTER_IN_IP_INPUT, 90,
+                                      ds_cstr(match), ds_cstr(actions), NULL,
+                                      copp_meter_get(COPP_ND_NA,
+                                                     op->od->nbr->copp,
+                                                     meter_groups), NULL);
 
-            build_lrouter_nd_flow(op->od, op, "nd_na",
-                                  ip_address, NULL, REG_INPORT_ETH_ADDR,
-                                  match, false, 90, NULL,
-                                  lflows, meter_groups);
+            ds_destroy(&load_balancer_ips_v6);
         }
 
         if (!op->od->is_gw_router && !op->od->l3dgw_port) {
