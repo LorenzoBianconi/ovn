@@ -46,6 +46,8 @@ COVERAGE_DEFINE(lflow_run);
 /* Contains "struct expr_symbol"s for fields supported by OVN lflows. */
 static struct shash symtab;
 
+static bool lflow_dp_meter = true;
+
 void
 lflow_init(void)
 {
@@ -647,7 +649,7 @@ add_matches_to_flow_table(const struct sbrec_logical_flow *lflow,
         .ct_snat_vip_ptable = OFTABLE_CT_SNAT_FOR_VIP,
         .fdb_ptable = OFTABLE_GET_FDB,
         .fdb_lookup_ptable = OFTABLE_LOOKUP_FDB,
-        .ctrl_meter_id = ctrl_meter_id,
+        .ctrl_meter_id = lflow_dp_meter ? ctrl_meter_id : NX_CTLR_NO_METER,
     };
     ovnacts_encode(ovnacts->data, ovnacts->size, &ep, &ofpacts);
 
@@ -759,6 +761,12 @@ convert_match_to_expr(const struct sbrec_logical_flow *lflow,
     }
 
     return expr_simplify(e);
+}
+
+void
+lflow_meter_supported(bool val)
+{
+    lflow_dp_meter = val;
 }
 
 static bool
