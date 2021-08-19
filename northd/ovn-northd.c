@@ -6858,6 +6858,7 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
         return;
     }
 
+    bool allow_unreachable_ip = op->od->is_gw_router || is_l3dgw_port(op);
     /* Forward ARP requests for owned IP addresses (L3, VIP, NAT) only to this
      * router port.
      * Priority: 80.
@@ -6875,7 +6876,7 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
                 build_lswitch_rport_arp_req_flow_for_reachable_ip(
                     ip_addr, AF_INET, sw_op, sw_od, 80, lflows,
                     stage_hint);
-            } else {
+            } else if (allow_unreachable_ip) {
                 build_lswitch_rport_arp_req_flow_for_unreachable_ip(
                         ip_addr, AF_INET, sw_od, 90, lflows,
                         stage_hint);
@@ -6893,7 +6894,7 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
                 build_lswitch_rport_arp_req_flow_for_reachable_ip(
                     ip_addr, AF_INET6, sw_op, sw_od, 80, lflows,
                     stage_hint);
-            } else {
+            } else if (allow_unreachable_ip) {
                 build_lswitch_rport_arp_req_flow_for_unreachable_ip(
                     ip_addr, AF_INET6, sw_od, 90, lflows,
                     stage_hint);
