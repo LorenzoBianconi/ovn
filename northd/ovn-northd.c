@@ -6863,34 +6863,6 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
      * Priority: 80.
      */
 
-    const char *ip_addr;
-    SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v4) {
-        ovs_be32 ipv4_addr;
-
-        /* Check if the ovn port has a network configured on which we could
-         * expect ARP requests for the LB VIP.
-         */
-        if (ip_parse(ip_addr, &ipv4_addr) &&
-            lrouter_port_ipv4_reachable(op, ipv4_addr)) {
-            build_lswitch_rport_arp_req_flow_for_reachable_ip(
-                ip_addr, AF_INET, sw_op, sw_od, 80, lflows,
-                stage_hint);
-        }
-    }
-    SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v6) {
-        struct in6_addr ipv6_addr;
-
-        /* Check if the ovn port has a network configured on which we could
-         * expect NS requests for the LB VIP.
-         */
-        if (ipv6_parse(ip_addr, &ipv6_addr) &&
-            lrouter_port_ipv6_reachable(op, &ipv6_addr)) {
-            build_lswitch_rport_arp_req_flow_for_reachable_ip(
-                ip_addr, AF_INET6, sw_op, sw_od, 80, lflows,
-                stage_hint);
-        }
-    }
-
     for (size_t i = 0; i < op->od->nbr->n_nat; i++) {
         struct ovn_nat *nat_entry = &op->od->nat_entries[i];
         const struct nbrec_nat *nat = nat_entry->nb;
@@ -9413,10 +9385,12 @@ build_lrouter_defrag_flows_for_lb(struct ovn_northd_lb *lb,
 }
 
 static void
-build_lrouter_flows_for_unreachable_ips(struct ovn_northd_lb *lb,
-                                        struct ovn_lb_vip *lb_vip,
-                                        struct hmap *lflows,
-                                        struct hmap *ports, struct ds *match)
+build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
+                                    struct ovn_lb_vip *lb_vip,
+                                    struct hmap *lflows,
+                                    struct hmap *ports,
+                                    struct ds *match,
+                                    struct ds *action)
 {
     bool ipv4 = IN6_IS_ADDR_V4MAPPED(&lb_vip->vip);
     ovs_be32 ipv4_addr;
@@ -9435,9 +9409,9 @@ build_lrouter_flows_for_unreachable_ips(struct ovn_northd_lb *lb,
 
     for (size_t i = 0; i < lb->n_nb_lr; i++) {
             struct ovn_datapath *od = lb->nb_lr[i];
-            for (size_t j = 0; j < od->n_router_ports; j++) {
-                struct ovn_port *op = ovn_port_get_peer(ports,
-                                                        od->router_ports[j]);
+            for (size_t j = 0; j < od->nbr->n_ports; j++) {
+                struct ovn_port *op = ovn_port_find(ports,
+                                                    od->nbr->ports[j]->name);
                 if (!op) {
                     continue;
                 }
@@ -9447,18 +9421,29 @@ build_lrouter_flows_for_unreachable_ips(struct ovn_northd_lb *lb,
                     continue;
                 }
 
-                if (ipv4) {
-                    if (lrouter_port_ipv4_reachable(op, ipv4_addr)) {
-                        continue;
+                if ((ipv4 && lrouter_port_ipv4_reachable(op, ipv4_addr)) ||
+                    (!ipv4 && lrouter_port_ipv6_reachable(op, &lb_vip->vip))) {
+                    ds_clear(action);
+                    if (peer->od->n_router_ports != peer->od->nbs->n_ports) {
+                        ds_put_format(action,
+                                      "clone {outport = %s; output; }; "
+                                      "outport = \""MC_FLOOD_L2"\"; output;",
+                                      peer->json_key);
+                    } else {
+                        ds_put_format(action, "outport = %s; output;",
+                                      peer->json_key);
                     }
-                } else if (lrouter_port_ipv6_reachable(op, &lb_vip->vip)) {
-                    continue;
+                    ovn_lflow_add_with_hint(lflows, peer->od,
+                                            S_SWITCH_IN_L2_LKUP, 80,
+                                            ds_cstr(match), ds_cstr(action),
+                                            &peer->nbsp->header_);
+                } else {
+                    ovn_lflow_add_with_hint(lflows, peer->od,
+                                            S_SWITCH_IN_L2_LKUP, 90,
+                                            ds_cstr(match),
+                                            "outport = \""MC_FLOOD"\"; output;",
+                                            &peer->nbsp->header_);
                 }
-
-                ovn_lflow_add_with_hint(lflows, peer->od, S_SWITCH_IN_L2_LKUP,
-                                        90, ds_cstr(match),
-                                        "outport = \""MC_FLOOD"\"; output;",
-                                        &peer->nbsp->header_);
             }
     }
 }
@@ -9475,8 +9460,8 @@ build_lrouter_flows_for_lb(struct ovn_northd_lb *lb, struct hmap *lflows,
     for (size_t i = 0; i < lb->n_vips; i++) {
         struct ovn_lb_vip *lb_vip = &lb->vips[i];
 
-        build_lrouter_flows_for_unreachable_ips(lb, lb_vip, lflows, ports,
-                                                match);
+        build_lrouter_arp_nd_flows_for_vips(lb, lb_vip, lflows, ports,
+                                            match, action);
 
         build_lrouter_nat_flows_for_lb(lb_vip, lb, &lb->vips_nb[i],
                                        lflows, match, action,
