@@ -6836,6 +6836,80 @@ build_lswitch_rport_arp_req_flow_for_unreachable_ip(const char *ips,
     ds_destroy(&match);
 }
 
+#define UNREACHABLE_IP_BULK	25
+static void
+build_lswitch_rport_arp_req_flow_for_ip(
+    struct hmap *lflows, struct sset *ip_list, int addr_family,
+    struct ovn_port *op, struct ovn_datapath *od,
+    const struct ovsdb_idl_row *stage_hint)
+{
+    struct ds ips_unreachable = DS_EMPTY_INITIALIZER;
+    struct ds ips_reachable = DS_EMPTY_INITIALIZER;
+    int n_unreachable = 0;
+    int n_reachable = 0;
+    const char *ip_addr;
+
+    SSET_FOR_EACH (ip_addr, ip_list) {
+        if (addr_family == AF_INET) {
+            ovs_be32 ipv4_addr;
+            if (!ip_parse(ip_addr, &ipv4_addr)) {
+                continue;
+            }
+            if (lrouter_port_ipv4_reachable(op, ipv4_addr)) {
+                ds_put_format(&ips_reachable, "%s, ", ip_addr);
+            } else {
+                ds_put_format(&ips_unreachable, "%s, ", ip_addr);
+            }
+        } else {
+            struct in6_addr ipv6_addr;
+            if (!ipv6_parse(ip_addr, &ipv6_addr)) {
+                continue;
+            }
+            if (lrouter_port_ipv6_reachable(op, &ipv6_addr)) {
+                ds_put_format(&ips_reachable, "%s, ", ip_addr);
+            } else {
+                ds_put_format(&ips_unreachable, "%s, ", ip_addr);
+            }
+        }
+
+        if (++n_unreachable > UNREACHABLE_IP_BULK) {
+            ds_chomp(&ips_unreachable, ' ');
+            ds_chomp(&ips_unreachable, ',');
+            build_lswitch_rport_arp_req_flow_for_unreachable_ip(
+                ds_cstr(&ips_unreachable), addr_family, od, 90, lflows,
+                stage_hint);
+            ds_clear(&ips_unreachable);
+            n_unreachable = 0;
+        }
+        if (++n_reachable > UNREACHABLE_IP_BULK) {
+            ds_chomp(&ips_reachable, ' ');
+            ds_chomp(&ips_reachable, ',');
+            build_lswitch_rport_arp_req_flow_for_reachable_ip(
+                ds_cstr(&ips_reachable), addr_family, op, od, 80, lflows,
+                stage_hint);
+            ds_clear(&ips_reachable);
+            n_reachable = 0;
+        }
+    }
+    if (n_unreachable) {
+        ds_chomp(&ips_unreachable, ' ');
+        ds_chomp(&ips_unreachable, ',');
+        build_lswitch_rport_arp_req_flow_for_unreachable_ip(
+            ds_cstr(&ips_unreachable), addr_family, od, 90, lflows,
+            stage_hint);
+    }
+    if (n_reachable) {
+        ds_chomp(&ips_reachable, ' ');
+        ds_chomp(&ips_reachable, ',');
+        build_lswitch_rport_arp_req_flow_for_reachable_ip(
+            ds_cstr(&ips_reachable), addr_family, op, od, 80, lflows,
+            stage_hint);
+    }
+
+    ds_destroy(&ips_unreachable);
+    ds_destroy(&ips_reachable);
+}
+
 /*
  * Ingress table 22: Flows that forward ARP/ND requests only to the routers
  * that own the addresses.
@@ -6863,43 +6937,13 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
      * Priority: 80.
      */
 
-    const char *ip_addr;
-    SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v4) {
-        ovs_be32 ipv4_addr;
+    build_lswitch_rport_arp_req_flow_for_ip(
+            lflows, &op->od->lb_ips_v4, AF_INET, sw_op, sw_od,
+            stage_hint);
 
-        /* Check if the ovn port has a network configured on which we could
-         * expect ARP requests for the LB VIP.
-         */
-        if (ip_parse(ip_addr, &ipv4_addr)) {
-            if (lrouter_port_ipv4_reachable(op, ipv4_addr)) {
-                build_lswitch_rport_arp_req_flow_for_reachable_ip(
-                    ip_addr, AF_INET, sw_op, sw_od, 80, lflows,
-                    stage_hint);
-            } else {
-                build_lswitch_rport_arp_req_flow_for_unreachable_ip(
-                        ip_addr, AF_INET, sw_od, 90, lflows,
-                        stage_hint);
-            }
-        }
-    }
-    SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v6) {
-        struct in6_addr ipv6_addr;
-
-        /* Check if the ovn port has a network configured on which we could
-         * expect NS requests for the LB VIP.
-         */
-        if (ipv6_parse(ip_addr, &ipv6_addr)) {
-            if (lrouter_port_ipv6_reachable(op, &ipv6_addr)) {
-                build_lswitch_rport_arp_req_flow_for_reachable_ip(
-                    ip_addr, AF_INET6, sw_op, sw_od, 80, lflows,
-                    stage_hint);
-            } else {
-                build_lswitch_rport_arp_req_flow_for_unreachable_ip(
-                    ip_addr, AF_INET6, sw_od, 90, lflows,
-                    stage_hint);
-            }
-        }
-    }
+    build_lswitch_rport_arp_req_flow_for_ip(
+            lflows, &op->od->lb_ips_v6, AF_INET6, sw_op, sw_od,
+            stage_hint);
 
     for (size_t i = 0; i < op->od->nbr->n_nat; i++) {
         struct ovn_nat *nat_entry = &op->od->nat_entries[i];
