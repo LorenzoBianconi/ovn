@@ -6836,6 +6836,53 @@ build_lswitch_rport_arp_req_flow_for_unreachable_ip(const char *ips,
     ds_destroy(&match);
 }
 
+static void
+build_lswitch_rport_arp_req_flow_for_unreachable_ip_bulk(
+    struct hmap *lflows, struct sset *ip_list, int addr_family,
+    struct ovn_port *op, struct ovn_datapath *od,
+    const struct ovsdb_idl_row *stage_hint)
+{
+    struct ds ips_unreachable = DS_EMPTY_INITIALIZER;
+    const char *ip_addr;
+    int count = 0;
+
+    SSET_FOR_EACH (ip_addr, ip_list) {
+        if (addr_family == AF_INET) {
+            ovs_be32 ipv4_addr;
+            if (!ip_parse(ip_addr, &ipv4_addr) ||
+                lrouter_port_ipv4_reachable(op, ipv4_addr)) {
+                continue;
+            }
+        } else {
+            struct in6_addr ipv6_addr;
+            if (!ipv6_parse(ip_addr, &ipv6_addr) ||
+                lrouter_port_ipv6_reachable(op, &ipv6_addr)) {
+                continue;
+            }
+        }
+
+        ds_put_format(&ips_unreachable, "%s, ", ip_addr);
+        if (++count > 10) {
+            ds_chomp(&ips_unreachable, ' ');
+            ds_chomp(&ips_unreachable, ',');
+            build_lswitch_rport_arp_req_flow_for_unreachable_ip(
+                ds_cstr(&ips_unreachable), addr_family, od, 90, lflows,
+                stage_hint);
+            ds_clear(&ips_unreachable);
+            count = 0;
+        }
+    }
+    if (count) {
+        ds_chomp(&ips_unreachable, ' ');
+        ds_chomp(&ips_unreachable, ',');
+        build_lswitch_rport_arp_req_flow_for_unreachable_ip(
+            ds_cstr(&ips_unreachable), addr_family, od, 90, lflows,
+            stage_hint);
+    }
+
+    ds_destroy(&ips_unreachable);
+}
+
 /*
  * Ingress table 22: Flows that forward ARP/ND requests only to the routers
  * that own the addresses.
@@ -6863,6 +6910,9 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
      * Priority: 80.
      */
 
+    struct ds ips_v4_match_unreachable = DS_EMPTY_INITIALIZER;
+    struct ds ips_v6_match_unreachable = DS_EMPTY_INITIALIZER;
+
     const char *ip_addr;
     SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v4) {
         ovs_be32 ipv4_addr;
@@ -6875,13 +6925,12 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
                 build_lswitch_rport_arp_req_flow_for_reachable_ip(
                     ip_addr, AF_INET, sw_op, sw_od, 80, lflows,
                     stage_hint);
-            } else {
-                build_lswitch_rport_arp_req_flow_for_unreachable_ip(
-                        ip_addr, AF_INET, sw_od, 90, lflows,
-                        stage_hint);
             }
         }
     }
+    build_lswitch_rport_arp_req_flow_for_unreachable_ip_bulk(
+            lflows, &op->od->lb_ips_v4, AF_INET, sw_op, sw_od,
+            stage_hint);
     SSET_FOR_EACH (ip_addr, &op->od->lb_ips_v6) {
         struct in6_addr ipv6_addr;
 
@@ -6893,13 +6942,15 @@ build_lswitch_rport_arp_req_flows(struct ovn_port *op,
                 build_lswitch_rport_arp_req_flow_for_reachable_ip(
                     ip_addr, AF_INET6, sw_op, sw_od, 80, lflows,
                     stage_hint);
-            } else {
-                build_lswitch_rport_arp_req_flow_for_unreachable_ip(
-                    ip_addr, AF_INET6, sw_od, 90, lflows,
-                    stage_hint);
             }
         }
     }
+    build_lswitch_rport_arp_req_flow_for_unreachable_ip_bulk(
+            lflows, &op->od->lb_ips_v6, AF_INET6, sw_op, sw_od,
+            stage_hint);
+
+    ds_destroy(&ips_v4_match_unreachable);
+    ds_destroy(&ips_v6_match_unreachable);
 
     for (size_t i = 0; i < op->od->nbr->n_nat; i++) {
         struct ovn_nat *nat_entry = &op->od->nat_entries[i];
