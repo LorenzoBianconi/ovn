@@ -699,6 +699,8 @@ struct ovn_datapath {
 
     /* Port groups related to the datapath, used only when nbs is NOT NULL. */
     struct hmap nb_pgs;
+
+    struct hmap dp_ports;
 };
 
 /* Contains a NAT entry with the external addresses pre-parsed. */
@@ -936,6 +938,7 @@ ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
     od->nbr = nbr;
     hmap_init(&od->port_tnlids);
     hmap_init(&od->nb_pgs);
+    hmap_init(&od->dp_ports);
     od->port_key_hint = 0;
     hmap_insert(datapaths, &od->key_node, uuid_hash(&od->key));
     od->lr_group = NULL;
@@ -964,6 +967,7 @@ ovn_datapath_destroy(struct hmap *datapaths, struct ovn_datapath *od)
         free(od->l3dgw_ports);
         ovn_ls_port_group_destroy(&od->nb_pgs);
         destroy_mcast_info_for_datapath(od);
+        hmap_destroy(&od->dp_ports);
 
         free(od);
     }
@@ -1484,6 +1488,7 @@ struct ovn_port {
      * sb->logical_port.  (A distributed gateway port creates a "derived"
      * ovn_port with key "cr-%s" % nbrp->name.) */
     struct hmap_node key_node;  /* Index on 'key'. */
+    struct hmap_node dp_node;
     char *key;                  /* nbsp->name, nbrp->name, sb->logical_port. */
     char *json_key;             /* 'key', quoted for use in JSON. */
 
@@ -1673,6 +1678,18 @@ ovn_port_find__(const struct hmap *ports, const char *name,
         }
     }
     return matched_op;
+}
+
+static struct ovn_port *
+ovn_port_find_over_dp(const struct hmap *ports, const char *name)
+{
+    struct ovn_port *op;
+    HMAP_FOR_EACH_WITH_HASH (op, dp_node, hash_string(name, 0), ports) {
+        if (!strcmp(op->key, name)) {
+            return op;
+        }
+    }
+    return NULL;
 }
 
 static struct ovn_port *
@@ -2465,6 +2482,8 @@ join_logical_ports(struct northd_context *ctx,
                 }
 
                 op->od = od;
+                hmap_insert(&od->dp_ports, &op->dp_node,
+                            hash_string(op->key, 0));
                 tag_alloc_add_existing_tags(tag_alloc_table, nbsp);
             }
         } else {
@@ -2509,6 +2528,8 @@ join_logical_ports(struct northd_context *ctx,
 
                 op->lrp_networks = lrp_networks;
                 op->od = od;
+                hmap_insert(&od->dp_ports, &op->dp_node,
+                            hash_string(op->key, 0));
 
                 if (op->nbrp->ha_chassis_group ||
                     op->nbrp->n_gateway_chassis) {
@@ -9388,7 +9409,6 @@ static void
 build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
                                     struct ovn_lb_vip *lb_vip,
                                     struct hmap *lflows,
-                                    struct hmap *ports,
                                     struct ds *match,
                                     struct ds *action)
 {
@@ -9410,9 +9430,13 @@ build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
     for (size_t i = 0; i < lb->n_nb_lr; i++) {
             struct ovn_datapath *od = lb->nb_lr[i];
             for (size_t j = 0; j < od->nbr->n_ports; j++) {
-                struct ovn_port *op = ovn_port_find(ports,
-                                                    od->nbr->ports[j]->name);
+                struct ovn_port *op = ovn_port_find_over_dp(&od->dp_ports,
+                        od->nbr->ports[j]->name);
                 if (!op) {
+                    continue;
+                }
+
+                if (!od->is_gw_router && !is_l3dgw_port(op)) {
                     continue;
                 }
 
@@ -9450,7 +9474,7 @@ build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
 
 static void
 build_lrouter_flows_for_lb(struct ovn_northd_lb *lb, struct hmap *lflows,
-                           struct hmap *ports, struct shash *meter_groups,
+                           struct shash *meter_groups,
                            struct ds *match, struct ds *action)
 {
     if (!lb->n_nb_lr) {
@@ -9460,8 +9484,7 @@ build_lrouter_flows_for_lb(struct ovn_northd_lb *lb, struct hmap *lflows,
     for (size_t i = 0; i < lb->n_vips; i++) {
         struct ovn_lb_vip *lb_vip = &lb->vips[i];
 
-        build_lrouter_arp_nd_flows_for_vips(lb, lb_vip, lflows, ports,
-                                            match, action);
+        build_lrouter_arp_nd_flows_for_vips(lb, lb_vip, lflows, match, action);
 
         build_lrouter_nat_flows_for_lb(lb_vip, lb, &lb->vips_nb[i],
                                        lflows, match, action,
@@ -12788,7 +12811,7 @@ build_lflows_thread(void *arg)
                     build_lrouter_defrag_flows_for_lb(lb, lsi->lflows,
                                                       &lsi->match);
                     build_lrouter_flows_for_lb(lb, lsi->lflows,
-                                               lsi->ports, lsi->meter_groups,
+                                               lsi->meter_groups,
                                                &lsi->match, &lsi->actions);
                     build_lswitch_flows_for_lb(lb, lsi->lflows,
                                                lsi->meter_groups,
@@ -12957,9 +12980,8 @@ build_lswitch_and_lrouter_flows(struct hmap *datapaths, struct hmap *ports,
                                                  &lsi.actions,
                                                  &lsi.match);
             build_lrouter_defrag_flows_for_lb(lb, lsi.lflows, &lsi.match);
-            build_lrouter_flows_for_lb(lb, lsi.lflows, lsi.ports,
-                                       lsi.meter_groups, &lsi.match,
-                                       &lsi.actions);
+            build_lrouter_flows_for_lb(lb, lsi.lflows, lsi.meter_groups,
+                                       &lsi.match, &lsi.actions);
             build_lswitch_flows_for_lb(lb, lsi.lflows, lsi.meter_groups,
                                        &lsi.match, &lsi.actions);
         }
