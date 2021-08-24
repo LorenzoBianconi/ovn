@@ -4413,21 +4413,14 @@ do_ovn_lflow_add(struct hmap *lflow_map, struct ovn_datapath *od,
 
 /* Adds a row with the specified contents to the Logical_Flow table. */
 static void
-ovn_lflow_add_at(struct hmap *lflow_map, struct ovn_datapath *od,
-                 enum ovn_stage stage, uint16_t priority,
-                 const char *match, const char *actions, const char *io_port,
-                 const char *ctrl_meter,
-                 const struct ovsdb_idl_row *stage_hint, const char *where)
+ovn_lflow_add_at_with_hash(struct hmap *lflow_map, struct ovn_datapath *od,
+                           enum ovn_stage stage, uint16_t priority,
+                           const char *match, const char *actions,
+                           const char *io_port, const char *ctrl_meter,
+                           const struct ovsdb_idl_row *stage_hint,
+                           const char *where, uint32_t hash)
 {
     ovs_assert(ovn_stage_to_datapath_type(stage) == ovn_datapath_get_type(od));
-
-    uint32_t hash;
-
-    hash = ovn_logical_flow_hash(ovn_stage_get_table(stage),
-                                 ovn_stage_get_pipeline_name(stage),
-                                 priority, match,
-                                 actions);
-
     if (use_logical_dp_groups && use_parallel_build) {
         lock_hash_row(&lflow_locks, hash);
         do_ovn_lflow_add(lflow_map, od, hash, stage, priority, match,
@@ -4437,6 +4430,23 @@ ovn_lflow_add_at(struct hmap *lflow_map, struct ovn_datapath *od,
         do_ovn_lflow_add(lflow_map, od, hash, stage, priority, match,
                          actions, io_port, stage_hint, where, ctrl_meter);
     }
+}
+
+static void
+ovn_lflow_add_at(struct hmap *lflow_map, struct ovn_datapath *od,
+                 enum ovn_stage stage, uint16_t priority,
+                 const char *match, const char *actions, const char *io_port,
+                 const char *ctrl_meter,
+                 const struct ovsdb_idl_row *stage_hint, const char *where)
+{
+    uint32_t hash;
+
+    hash = ovn_logical_flow_hash(ovn_stage_get_table(stage),
+                                 ovn_stage_get_pipeline_name(stage),
+                                 priority, match,
+                                 actions);
+    ovn_lflow_add_at_with_hash(lflow_map,od, stage, priority, match, actions,
+                               io_port, ctrl_meter, stage_hint, where, hash);
 }
 
 /* Adds a row with the specified contents to the Logical_Flow table. */
@@ -9427,6 +9437,12 @@ build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
                       FLAGBIT_NOT_VXLAN, lb_vip->vip_str);
     }
 
+    ds_clear(action);
+    ds_put_cstr(action, "outport = \""MC_FLOOD"\"; output;");
+    uint32_t hash = ovn_logical_flow_hash(ovn_stage_get_table(S_SWITCH_IN_L2_LKUP),
+            ovn_stage_get_pipeline_name(S_SWITCH_IN_L2_LKUP), 90,
+            ds_cstr(match), ds_cstr(action));
+
     for (size_t i = 0; i < lb->n_nb_lr; i++) {
             struct ovn_datapath *od = lb->nb_lr[i];
             for (size_t j = 0; j < od->nbr->n_ports; j++) {
@@ -9462,11 +9478,12 @@ build_lrouter_arp_nd_flows_for_vips(struct ovn_northd_lb *lb,
                                             ds_cstr(match), ds_cstr(action),
                                             &peer->nbsp->header_);
                 } else {
-                    ovn_lflow_add_with_hint(lflows, peer->od,
-                                            S_SWITCH_IN_L2_LKUP, 90,
-                                            ds_cstr(match),
-                                            "outport = \""MC_FLOOD"\"; output;",
-                                            &peer->nbsp->header_);
+                    ovn_lflow_add_at_with_hash(lflows, peer->od,
+                                               S_SWITCH_IN_L2_LKUP, 90,
+                                               ds_cstr(match), ds_cstr(action),
+                                               NULL, NULL,
+                                               &peer->nbsp->header_,
+                                               OVS_SOURCE_LOCATOR, hash);
                 }
             }
     }
