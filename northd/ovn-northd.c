@@ -9392,6 +9392,11 @@ build_lswitch_flows_for_lb(struct ovn_northd_lb *lb, struct hmap *lflows,
     build_lb_rules(lflows, lb, match, action, meter_groups);
 }
 
+static bool
+ovn_dp_group_update_with_reference(struct ovn_lflow *lflow_ref,
+                                   struct ovn_datapath *od,
+                                   uint32_t hash);
+
 /* If there are any load balancing rules, we should send the packet to
  * conntrack for defragmentation and tracking.  This helps with two things.
  *
@@ -9437,11 +9442,24 @@ build_lrouter_defrag_flows_for_lb(struct ovn_northd_lb *lb,
 
         ds_put_format(&defrag_actions, "ct_dnat;");
 
+        struct ovn_lflow *lflow_ref = NULL;
+        uint32_t hash = ovn_logical_flow_hash(
+                ovn_stage_get_table(S_ROUTER_IN_DEFRAG),
+                ovn_stage_get_pipeline_name(S_ROUTER_IN_DEFRAG), prio,
+                ds_cstr(match), ds_cstr(&defrag_actions));
+
         for (size_t j = 0; j < lb->n_nb_lr; j++) {
-            ovn_lflow_add_with_hint(lflows, lb->nb_lr[j], S_ROUTER_IN_DEFRAG,
-                                    prio, ds_cstr(match),
-                                    ds_cstr(&defrag_actions),
-                                    &lb->nlb->header_);
+            if (ovn_dp_group_update_with_reference(lflow_ref, lb->nb_lr[j],
+                                                   hash)) {
+                continue;
+            }
+            lflow_ref = ovn_lflow_add_at_with_hash(lflows, lb->nb_lr[j],
+                                                   S_ROUTER_IN_DEFRAG, prio,
+                                                   ds_cstr(match),
+                                                   ds_cstr(&defrag_actions),
+                                                   NULL, NULL,
+                                                   &lb->nlb->header_,
+                                                   OVS_SOURCE_LOCATOR, hash);
         }
     }
     ds_destroy(&defrag_actions);
