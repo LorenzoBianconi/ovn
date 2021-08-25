@@ -6332,6 +6332,11 @@ build_qos(struct ovn_datapath *od, struct hmap *lflows) {
     ds_destroy(&action);
 }
 
+static bool
+ovn_dp_group_update_with_reference(struct ovn_lflow *lflow_ref,
+                                   struct ovn_datapath *od,
+                                   uint32_t hash);
+
 static void
 build_lb_rules(struct hmap *lflows, struct ovn_northd_lb *lb,
                struct ds *match, struct ds *action,
@@ -6388,17 +6393,28 @@ build_lb_rules(struct hmap *lflows, struct ovn_northd_lb *lb,
             ds_put_format(match, " && %s.dst == %d", proto, lb_vip->vip_port);
             priority = 120;
         }
+
+        struct ovn_lflow *lflow_ref = NULL;
+        uint32_t hash = ovn_logical_flow_hash(
+                ovn_stage_get_table(S_SWITCH_IN_STATEFUL),
+                ovn_stage_get_pipeline_name(S_SWITCH_IN_STATEFUL), priority,
+                ds_cstr(match), ds_cstr(action));
+
         for (size_t j = 0; j < lb->n_nb_ls; j++) {
             struct ovn_datapath *od = lb->nb_ls[j];
 
             if (reject) {
                 meter = copp_meter_get(COPP_REJECT, od->nbs->copp,
                                        meter_groups);
+            } else if (ovn_dp_group_update_with_reference(lflow_ref, od,
+                                                          hash)) {
+                continue;
             }
-            ovn_lflow_add_with_hint__(lflows, od, S_SWITCH_IN_STATEFUL,
-                                      priority, ds_cstr(match),
-                                      ds_cstr(action), NULL, meter,
-                                      &lb->nlb->header_);
+            lflow_ref = ovn_lflow_add_at_with_hash(lflows, od,
+                    S_SWITCH_IN_STATEFUL, priority,
+                    ds_cstr(match), ds_cstr(action),
+                    NULL, meter, &lb->nlb->header_,
+                    OVS_SOURCE_LOCATOR, hash);
         }
     }
 }
@@ -9391,11 +9407,6 @@ build_lswitch_flows_for_lb(struct ovn_northd_lb *lb, struct hmap *lflows,
      * REGBIT_CONNTRACK_COMMIT. */
     build_lb_rules(lflows, lb, match, action, meter_groups);
 }
-
-static bool
-ovn_dp_group_update_with_reference(struct ovn_lflow *lflow_ref,
-                                   struct ovn_datapath *od,
-                                   uint32_t hash);
 
 /* If there are any load balancing rules, we should send the packet to
  * conntrack for defragmentation and tracking.  This helps with two things.
