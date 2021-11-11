@@ -1804,7 +1804,7 @@ add_meter_string(struct ovn_extend_table_info *m_desired,
 static void
 add_meter(struct ovn_extend_table_info *m_desired,
           const struct sbrec_meter_table *meter_table,
-          struct ovs_list *msgs)
+          struct ovs_list *msgs, bool update)
 {
     const struct sbrec_meter *sb_meter;
     SBREC_METER_TABLE_FOR_EACH (sb_meter, meter_table) {
@@ -1820,7 +1820,7 @@ add_meter(struct ovn_extend_table_info *m_desired,
     }
 
     struct ofputil_meter_mod mm;
-    mm.command = OFPMC13_ADD;
+    mm.command = update ? OFPMC13_MODIFY : OFPMC13_ADD;
     mm.meter.meter_id = m_desired->table_id;
     mm.meter.flags = OFPMF13_STATS;
 
@@ -2232,13 +2232,15 @@ ofctrl_put(struct ovn_desired_flow_table *lflow_table,
     /* Iterate through all the desired meters. If there are new ones,
      * add them to the switch. */
     struct ovn_extend_table_info *m_desired;
-    EXTEND_TABLE_FOR_EACH_UNINSTALLED (m_desired, meters) {
-        if (!strncmp(m_desired->name, "__string: ", 10)) {
+    HMAP_FOR_EACH (m_desired, hmap_node, &meters->desired) {
+        bool installed = !!ovn_extend_table_lookup(&meters->existing,
+                                                   m_desired);
+        if (strncmp(m_desired->name, "__string: ", 10)) {
+            add_meter(m_desired, meter_table, &msgs, installed);
+        } else if (!installed) {
             /* The "set-meter" action creates a meter entry name that
              * describes the meter itself. */
             add_meter_string(m_desired, &msgs);
-        } else {
-            add_meter(m_desired, meter_table, &msgs);
         }
     }
 

@@ -956,7 +956,8 @@ ctrl_register_ovs_idl(struct ovsdb_idl *ovs_idl)
     SB_NODE(dhcpv6_options, "dhcpv6_options") \
     SB_NODE(dns, "dns") \
     SB_NODE(load_balancer, "load_balancer") \
-    SB_NODE(fdb, "fdb")
+    SB_NODE(fdb, "fdb") \
+    SB_NODE(meter_band, "meter-band")
 
 enum sb_engine_node {
 #define SB_NODE(NAME, NAME_STR) SB_##NAME,
@@ -3306,6 +3307,7 @@ main(int argc, char *argv[])
                      lflow_output_sb_load_balancer_handler);
     engine_add_input(&en_lflow_output, &en_sb_fdb,
                      lflow_output_sb_fdb_handler);
+    engine_add_input(&en_lflow_output, &en_sb_meter_band, NULL);
 
     engine_add_input(&en_ct_zones, &en_ovs_open_vswitch, NULL);
     engine_add_input(&en_ct_zones, &en_ovs_bridge, NULL);
