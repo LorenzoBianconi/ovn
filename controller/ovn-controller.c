@@ -1511,7 +1511,10 @@ addr_sets_sb_address_set_handler(struct engine_node *node, void *data)
     return true;
 }
 
+#define MAX_METER_ID    65535
 struct ed_type_meter {
+    unsigned long *ids; /* meter_id bitmap */
+    struct shash meter_map;
     bool change_tracked;
 };
 
@@ -1521,13 +1524,27 @@ en_meter_init(struct engine_node *node OVS_UNUSED,
 {
     struct ed_type_meter *m = xzalloc(sizeof *m);
 
+    m->ids = bitmap_allocate(2 * MAX_METER_ID);
+    bitmap_set1(m->ids, 0); /* id 0 is invalid. */
+    shash_init(&m->meter_map);
     m->change_tracked = false;
+
     return m;
 }
 
 static void
-en_meter_cleanup(void *data OVS_UNUSED)
+en_meter_cleanup(void *data)
 {
+    struct ed_type_meter *m = data;
+    struct shash_node *node, *next;
+
+    SHASH_FOR_EACH_SAFE (node, next, &m->meter_map) {
+        uint32_t *id = node->data;
+        shash_delete(&m->meter_map, node);
+        free(id);
+    }
+    shash_destroy(&m->meter_map);
+    bitmap_free(m->ids);
 }
 
 static void
@@ -1551,8 +1568,35 @@ meter_sb_meter_handler(struct engine_node *node, void *data)
 
     const struct sbrec_meter *iter;
     SBREC_METER_TABLE_FOR_EACH_TRACKED (iter, m_table) {
-        if (!sbrec_meter_is_deleted(iter) && !sbrec_meter_is_new(iter)) {
-            update_meter(iter);
+        if (sbrec_meter_is_deleted(iter)) {
+            uint32_t *id = shash_find_and_delete(&m->meter_map, iter->name);
+            if (!id) {
+                return false;
+            }
+            bitmap_set0(m->ids, *id);
+            remove_meter(*id);
+            free(id);
+        } else if (sbrec_meter_is_new(iter)) {
+            uint32_t id;
+
+            id = bitmap_scan(m->ids, 0, 1, MAX_METER_ID + 1);
+            if (id == MAX_METER_ID + 1) {
+                static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+                VLOG_ERR_RL(&rl, "%"PRIu32" out of meter ids.", id);
+                return false;
+            }
+            bitmap_set1(m->ids, id);
+
+            uint32_t *p_id = xmalloc(sizeof *p_id);
+            *p_id = id;
+            shash_add(&m->meter_map, iter->name, p_id);
+            set_meter(iter, id, OFPMC13_ADD);
+        } else {
+            uint32_t *id = shash_find_data(&m->meter_map, iter->name);
+            if (!id) {
+                return false;
+            }
+            set_meter(iter, *id, OFPMC13_MODIFY);
         }
     }
     m->change_tracked = true;
@@ -3644,6 +3688,7 @@ main(int argc, char *argv[])
                 engine_set_force_recompute(flow_engine, true);
             }
 
+            engine_run(meter_engine, true);
             if (br_int) {
                 ct_zones_data = engine_get_data(&en_ct_zones);
                 if (ct_zones_data) {
@@ -3661,7 +3706,6 @@ main(int argc, char *argv[])
 
                     stopwatch_start(CONTROLLER_LOOP_STOPWATCH_NAME,
                                     time_msec());
-                    engine_run(meter_engine, true);
                     if (ovnsb_idl_txn) {
                         if (!ofctrl_can_put()) {
                             /* When there are in-flight messages pending to
@@ -3812,7 +3856,6 @@ main(int argc, char *argv[])
                         ofctrl_put(&lflow_output_data->flow_table,
                                    &pflow_output_data->flow_table,
                                    &ct_zones_data->pending,
-                                   sbrec_meter_table_get(ovnsb_idl_loop.idl),
                                    ofctrl_seqno_get_req_cfg(),
                                    engine_node_changed(&en_lflow_output),
                                    engine_node_changed(&en_pflow_output));

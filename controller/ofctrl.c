@@ -1801,27 +1801,26 @@ add_meter_string(struct ovn_extend_table_info *m_desired,
     free(meter_string);
 }
 
-static void
-alloc_meter_mod(struct ovn_extend_table_info *m,
-                const struct sbrec_meter *sb_meter,
-                struct ovs_list *msgs, bool update)
+void
+set_meter(const struct sbrec_meter *meter, uint32_t id, int cmd)
 {
-    struct ofputil_meter_mod mm;
-    mm.command = update ? OFPMC13_MODIFY : OFPMC13_ADD;
-    mm.meter.meter_id = m->table_id;
-    mm.meter.flags = OFPMF13_STATS;
+    struct ovs_list msgs = OVS_LIST_INITIALIZER(&msgs);
+    struct ofputil_meter_mod mm = {
+        .command = cmd,
+        .meter.meter_id = id,
+        .meter.flags = OFPMF13_STATS,
+    };
 
-    if (!strcmp(sb_meter->unit, "pktps")) {
+    if (!strcmp(meter->unit, "pktps")) {
         mm.meter.flags |= OFPMF13_PKTPS;
     } else {
         mm.meter.flags |= OFPMF13_KBPS;
     }
-
-    mm.meter.n_bands = sb_meter->n_bands;
+    mm.meter.n_bands = meter->n_bands;
     mm.meter.bands = xcalloc(mm.meter.n_bands, sizeof *mm.meter.bands);
 
-    for (size_t i = 0; i < sb_meter->n_bands; i++) {
-        struct sbrec_meter_band *sb_band = sb_meter->bands[i];
+    for (size_t i = 0; i < meter->n_bands; i++) {
+        struct sbrec_meter_band *sb_band = meter->bands[i];
         struct ofputil_meter_band *mm_band = &mm.meter.bands[i];
 
         if (!strcmp(sb_band->action, "drop")) {
@@ -1836,23 +1835,8 @@ alloc_meter_mod(struct ovn_extend_table_info *m,
             mm.meter.flags |= OFPMF13_BURST;
         }
     }
-
-    add_meter_mod(&mm, msgs);
+    add_meter_mod(&mm, &msgs);
     free(mm.meter.bands);
-}
-
-void
-update_meter(const struct sbrec_meter *meter)
-{
-    struct ovs_list msgs = OVS_LIST_INITIALIZER(&msgs);
-    struct ovn_extend_table_info *m_iter;
-
-    HMAP_FOR_EACH (m_iter, hmap_node, &meters->desired) {
-        if (!strcmp(meter->name, m_iter->name) &&
-            ovn_extend_table_lookup(&meters->existing, m_iter)) {
-            alloc_meter_mod(m_iter, meter, &msgs, true);
-        }
-    }
 
     if (!ovs_list_is_empty(&msgs)) {
         /* Add a barrier to the list of messages. */
@@ -1867,25 +1851,25 @@ update_meter(const struct sbrec_meter *meter)
     }
 }
 
-static void
-add_meter(struct ovn_extend_table_info *m_desired,
-          const struct sbrec_meter_table *meter_table,
-          struct ovs_list *msgs)
+void
+remove_meter(uint32_t id)
 {
-    const struct sbrec_meter *sb_meter;
-    SBREC_METER_TABLE_FOR_EACH (sb_meter, meter_table) {
-        if (!strcmp(m_desired->name, sb_meter->name)) {
-            break;
-        }
-    }
+    struct ovs_list msgs = OVS_LIST_INITIALIZER(&msgs);
+    /* Delete the meter. */
+    struct ofputil_meter_mod mm = {
+        .command = OFPMC13_DELETE,
+        .meter = { .meter_id = id },
+    };
+    add_meter_mod(&mm, &msgs);
+    /* Add a barrier to the list of messages. */
+    struct ofpbuf *barrier = ofputil_encode_barrier_request(OFP15_VERSION);
 
-    if (!sb_meter) {
-        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
-        VLOG_ERR_RL(&rl, "could not find meter named \"%s\"", m_desired->name);
-        return;
+    ovs_list_push_back(&msgs, &barrier->list_node);
+    /* Queue the messages. */
+    struct ofpbuf *msg;
+    LIST_FOR_EACH_POP (msg, list_node, &msgs) {
+        queue_msg(msg);
     }
-
-    alloc_meter_mod(m_desired, sb_meter, msgs, false);
 }
 
 static void
@@ -2186,7 +2170,6 @@ void
 ofctrl_put(struct ovn_desired_flow_table *lflow_table,
            struct ovn_desired_flow_table *pflow_table,
            struct shash *pending_ct_zones,
-           const struct sbrec_meter_table *meter_table,
            uint64_t req_cfg,
            bool lflows_changed,
            bool pflows_changed)
@@ -2271,8 +2254,6 @@ ofctrl_put(struct ovn_desired_flow_table *lflow_table,
             /* The "set-meter" action creates a meter entry name that
              * describes the meter itself. */
             add_meter_string(m_desired, &msgs);
-        } else {
-            add_meter(m_desired, meter_table, &msgs);
         }
     }
 
@@ -2361,6 +2342,9 @@ ofctrl_put(struct ovn_desired_flow_table *lflow_table,
      * are not needed delete them. */
     struct ovn_extend_table_info *m_installed, *next_meter;
     EXTEND_TABLE_FOR_EACH_INSTALLED (m_installed, next_meter, meters) {
+        if (strncmp(m_installed->name, "__string: ", 10)) {
+            continue;
+        }
         /* Delete the meter. */
         struct ofputil_meter_mod mm = {
             .command = OFPMC13_DELETE,

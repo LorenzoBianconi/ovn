@@ -9181,10 +9181,10 @@ ovn-nbctl acl-del lsw0 to-lport 1000 'tcp.dst==80'
 ovn-nbctl --wait=hv sync
 AT_CHECK([ovs-ofctl -O OpenFlow13 dump-meters br-int | grep meter], [0], [ignore], [ignore])
 
-# Delete acl2, meter should be deleted in OVS
+# Delete acl2, meter should be kept in OVS
 ovn-nbctl acl-del lsw0 to-lport 1000 'tcp.dst==81'
 ovn-nbctl --wait=hv sync
-AT_CHECK([ovs-ofctl -O OpenFlow13 dump-meters br-int | grep meter], [1])
+AT_CHECK([ovs-ofctl -O OpenFlow13 dump-meters br-int | grep meter], [0], [ignore], [ignore])
 
 OVN_CLEANUP([hv])
 AT_CLEANUP

@@ -56,7 +56,6 @@ enum mf_field_id ofctrl_get_mf_field_id(void);
 void ofctrl_put(struct ovn_desired_flow_table *lflow_table,
                 struct ovn_desired_flow_table *pflow_table,
                 struct shash *pending_ct_zones,
-                const struct sbrec_meter_table *,
                 uint64_t nb_cfg,
                 bool lflow_changed,
                 bool pflow_changed);
@@ -130,6 +129,7 @@ void ofctrl_check_and_add_flow_metered(struct ovn_desired_flow_table *,
 bool ofctrl_is_connected(void);
 void ofctrl_set_probe_interval(int probe_interval);
 void ofctrl_get_memory_usage(struct simap *usage);
-void update_meter(const struct sbrec_meter *meter);
+void set_meter(const struct sbrec_meter *meter, uint32_t id, int cmd);
+void remove_meter(uint32_t id);
 
 #endif /* controller/ofctrl.h */
