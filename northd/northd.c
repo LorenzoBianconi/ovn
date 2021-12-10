@@ -12053,11 +12053,13 @@ build_ipv6_input_flows_for_lrouter_port(
             ds_put_format(actions,
                           "icmp6 {"
                           "eth.dst <-> eth.src; "
-                          "ip6.dst = ip6.src; ip6.src = %s; ip.ttl = 254; "
+                          "ip6.dst = ip6.src; "
+                          "ip6.src = %s; "
+                          "ip.ttl = 255; "
                           "icmp6.type = 3; /* Time exceeded */ "
                           "icmp6.code = 0; /* TTL exceeded in transit */ "
-                          "outport = %s; flags.loopback = 1; output; };",
-                          op->lrp_networks.ipv6_addrs[i].addr_s, op->json_key);
+                          "flags.loopback = 1; next; };",
+                          op->lrp_networks.ipv6_addrs[i].addr_s);
             ovn_lflow_add_with_hint__(lflows, op->od, S_ROUTER_IN_IP_INPUT,
                     100, ds_cstr(match), ds_cstr(actions), NULL,
                     copp_meter_get(COPP_ICMP6_ERR, op->od->nbr->copp,
@@ -12175,10 +12177,11 @@ build_lrouter_ipv4_ip_input(struct ovn_port *op,
                           "eth.dst <-> eth.src; "
                           "icmp4.type = 11; /* Time exceeded */ "
                           "icmp4.code = 0; /* TTL exceeded in transit */ "
-                          "ip4.dst = ip4.src; ip4.src = %s; ip.ttl = 254; "
-                          "outport = %s; flags.loopback = 1; output; };",
-                          op->lrp_networks.ipv4_addrs[i].addr_s,
-                          op->json_key);
+                          "ip4.dst = ip4.src; "
+                          "ip4.src = %s; "
+                          "ip.ttl = 255; "
+                          "flags.loopback = 1; next; };",
+                          op->lrp_networks.ipv4_addrs[i].addr_s);
             ovn_lflow_add_with_hint__(lflows, op->od, S_ROUTER_IN_IP_INPUT,
                     100, ds_cstr(match), ds_cstr(actions), NULL,
                     copp_meter_get(COPP_ICMP4_ERR, op->od->nbr->copp,
