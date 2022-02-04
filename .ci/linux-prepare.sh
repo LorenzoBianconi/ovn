@@ -12,4 +12,5 @@ set -ev
 git clone git://git.kernel.org/pub/scm/devel/sparse/sparse.git
 cd sparse && make -j4 HAVE_LLVM= HAVE_SQLITE= install && cd ..
 
-pip3 install --disable-pip-version-check --user flake8 hacking sphinx pyOpenSSL
+pip3 install --disable-pip-version-check --user wheel
+pip3 install --disable-pip-version-check --user flake8 'hacking>=3.0' sphinx pyOpenSSL
