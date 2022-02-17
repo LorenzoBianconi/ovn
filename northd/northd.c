@@ -1641,13 +1641,13 @@ destroy_routable_addresses(struct ovn_port_routable_addresses *ra)
 }
 
 static char **get_nat_addresses(const struct ovn_port *op, size_t *n,
-                                bool routable_only);
+                                bool routable_only, bool nat_only);
 
 static void
 assign_routable_addresses(struct ovn_port *op)
 {
     size_t n;
-    char **nats = get_nat_addresses(op, &n, true);
+    char **nats = get_nat_addresses(op, &n, true, false);
 
     if (!nats) {
         return;
@@ -2711,7 +2711,8 @@ join_logical_ports(struct northd_input *input_data,
  * The caller must free each of the n returned strings with free(),
  * and must free the returned array when it is no longer needed. */
 static char **
-get_nat_addresses(const struct ovn_port *op, size_t *n, bool routable_only)
+get_nat_addresses(const struct ovn_port *op, size_t *n, bool routable_only,
+                  bool nat_only)
 {
     size_t n_nats = 0;
     struct eth_addr mac;
@@ -2791,24 +2792,26 @@ get_nat_addresses(const struct ovn_port *op, size_t *n, bool routable_only)
         }
     }
 
-    const char *ip_address;
-    if (routable_only) {
-        SSET_FOR_EACH (ip_address, &op->od->lb_ips_v4_routable) {
-            ds_put_format(&c_addresses, " %s", ip_address);
-            central_ip_address = true;
-        }
-        SSET_FOR_EACH (ip_address, &op->od->lb_ips_v6_routable) {
-            ds_put_format(&c_addresses, " %s", ip_address);
-            central_ip_address = true;
-        }
-    } else {
-        SSET_FOR_EACH (ip_address, &op->od->lb_ips_v4) {
-            ds_put_format(&c_addresses, " %s", ip_address);
-            central_ip_address = true;
-        }
-        SSET_FOR_EACH (ip_address, &op->od->lb_ips_v6) {
-            ds_put_format(&c_addresses, " %s", ip_address);
-            central_ip_address = true;
+    if (!nat_only) {
+        const char *ip_address;
+        if (routable_only) {
+            SSET_FOR_EACH (ip_address, &op->od->lb_ips_v4_routable) {
+                ds_put_format(&c_addresses, " %s", ip_address);
+                central_ip_address = true;
+            }
+            SSET_FOR_EACH (ip_address, &op->od->lb_ips_v6_routable) {
+                ds_put_format(&c_addresses, " %s", ip_address);
+                central_ip_address = true;
+            }
+        } else {
+            SSET_FOR_EACH (ip_address, &op->od->lb_ips_v4) {
+                ds_put_format(&c_addresses, " %s", ip_address);
+                central_ip_address = true;
+            }
+            SSET_FOR_EACH (ip_address, &op->od->lb_ips_v6) {
+                ds_put_format(&c_addresses, " %s", ip_address);
+                central_ip_address = true;
+            }
         }
     }
 
@@ -3375,10 +3378,14 @@ ovn_port_update_sbrec(struct northd_input *input_data,
             char **nats = NULL;
             bool l3dgw_ports = op->peer && op->peer->od &&
                                op->peer->od->n_l3dgw_ports;
-            if (nat_addresses && !strcmp(nat_addresses, "router")) {
+            if (nat_addresses &&
+                (!strcmp(nat_addresses, "router") ||
+                 !strcmp(nat_addresses, "nat-only-router"))) {
                 if (op->peer && op->peer->od
                     && (chassis || op->peer->od->n_l3dgw_ports)) {
-                    nats = get_nat_addresses(op->peer, &n_nats, false);
+                    nats = get_nat_addresses(op->peer, &n_nats, false,
+                                             !strcmp(nat_addresses,
+                                                     "nat-only-router"));
                 }
             /* Only accept manual specification of ethernet address
              * followed by IPv4 addresses on type "l3gateway" ports. */
