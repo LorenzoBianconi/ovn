@@ -33,7 +33,7 @@
 
 VLOG_DEFINE_THIS_MODULE(inc_proc_eng);
 
-static bool engine_force_recompute = false;
+static enum engine_recompute_request  recompute_request = EN_RECOMPUTE_NONE;
 static bool engine_run_aborted = false;
 static const struct engine_context *engine_context;
 
@@ -47,6 +47,12 @@ static const char *engine_node_state_name[EN_STATE_MAX] = {
     [EN_ABORTED]   = "Aborted",
 };
 
+static const char *engine_recompute_request_name[EN_RECOMPUTE_MAX] = {
+    [EN_RECOMPUTE_NONE]     = "None",
+    [EN_RECOMPUTE_PARTIAL]  = "Partial",
+    [EN_RECOMPUTE_FULL]     = "Full",
+};
+
 static long long engine_compute_log_timeout_msec = 500;
 
 static void
@@ -54,9 +60,28 @@ engine_recompute(struct engine_node *node, bool allowed,
                  const char *reason_fmt, ...) OVS_PRINTF_FORMAT(3, 4);
 
 void
-engine_set_force_recompute(bool val)
+engine_request_recompute(enum engine_recompute_request val)
 {
-    engine_force_recompute = val;
+    if (val == EN_RECOMPUTE_PARTIAL &&
+        recompute_request == EN_RECOMPUTE_FULL) {
+        /* pending EN_RECOMPUTE_FULL already requested. */
+        return;
+    }
+
+    /* EN_RECOMPUTE_FULL is allowed to overwrite EN_RECOMPUTE_PARTIAL. */
+    recompute_request = val;
+    VLOG_DBG("Requested recompute %s", engine_recompute_request_name[val]);
+
+    for (size_t i = 0; i < engine_n_nodes; i++) {
+        if (recompute_request == EN_RECOMPUTE_PARTIAL) {
+            if (engine_nodes[i]->state == EN_UPDATED ||
+                engine_nodes[i]->state == EN_ABORTED) {
+                engine_nodes[i]->pending_recompute = true;
+            }
+        } else {
+            engine_nodes[i]->pending_recompute = false;
+        }
+    }
 }
 
 const struct engine_context *
@@ -428,6 +453,34 @@ engine_compute(struct engine_node *node, bool recompute_allowed)
     return true;
 }
 
+static bool
+engine_run_partial(struct engine_node *node, bool recompute_allowed)
+{
+    /* Let's try to do a selective recompute on pending changes before
+     * performing a full recompute.
+     */
+    if (recompute_request != EN_RECOMPUTE_PARTIAL) {
+        return false;
+    }
+
+    if (node->pending_recompute) {
+        goto recompute;
+    }
+
+    for (size_t i = 0; i < node->n_inputs; i++) {
+        if (node->inputs[i].node->pending_recompute) {
+            goto recompute;
+        }
+    }
+    return false;
+
+recompute:
+    node->pending_recompute = false;
+    engine_recompute(node, recompute_allowed, "selective recompute on %s",
+                     node->name);
+    return true;
+}
+
 static void
 engine_run_node(struct engine_node *node, bool recompute_allowed)
 {
@@ -438,8 +491,12 @@ engine_run_node(struct engine_node *node, bool recompute_allowed)
         return;
     }
 
-    if (engine_force_recompute) {
+    if (recompute_request == EN_RECOMPUTE_FULL) {
         engine_recompute(node, recompute_allowed, "forced");
+        return;
+    }
+
+    if (engine_run_partial(node, recompute_allowed)) {
         return;
     }
 
@@ -495,8 +552,12 @@ engine_run(bool recompute_allowed)
         if (engine_nodes[i]->state == EN_ABORTED) {
             engine_nodes[i]->stats.abort++;
             engine_run_aborted = true;
-            return;
+            break;
         }
+    }
+
+    if (recompute_request == EN_RECOMPUTE_PARTIAL) {
+        recompute_request = EN_RECOMPUTE_NONE;
     }
 }
 
@@ -524,6 +585,6 @@ void
 engine_trigger_recompute(void)
 {
     VLOG_INFO("User triggered force recompute.");
-    engine_set_force_recompute(true);
+    engine_request_recompute(EN_RECOMPUTE_FULL);
     poll_immediate_wake();
 }

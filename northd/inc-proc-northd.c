@@ -258,7 +258,7 @@ void inc_proc_northd_run(struct ovsdb_idl_txn *ovnnb_txn,
      * force-recompute request if 'recompute' is false.
      */
     if (recompute) {
-        engine_set_force_recompute(recompute);
+        engine_request_recompute(EN_RECOMPUTE_FULL);
     }
 
     struct engine_context eng_ctx = {
@@ -275,17 +275,17 @@ void inc_proc_northd_run(struct ovsdb_idl_txn *ovnnb_txn,
     if (!engine_has_run()) {
         if (engine_need_run()) {
             VLOG_DBG("engine did not run, force recompute next time.");
-            engine_set_force_recompute(true);
+            engine_request_recompute(EN_RECOMPUTE_FULL);
             poll_immediate_wake();
         } else {
             VLOG_DBG("engine did not run, and it was not needed");
         }
     } else if (engine_aborted()) {
         VLOG_DBG("engine was aborted, force recompute next time.");
-        engine_set_force_recompute(true);
+        engine_request_recompute(EN_RECOMPUTE_FULL);
         poll_immediate_wake();
     } else {
-        engine_set_force_recompute(false);
+        engine_request_recompute(EN_RECOMPUTE_NONE);
     }
 }
 

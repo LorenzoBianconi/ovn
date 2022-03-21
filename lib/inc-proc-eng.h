@@ -115,6 +115,13 @@ enum engine_node_state {
     EN_STATE_MAX,
 };
 
+enum engine_recompute_request {
+    EN_RECOMPUTE_NONE,      /* No recompute is necessary. */
+    EN_RECOMPUTE_PARTIAL,   /* Partial recompute on updated node requested. */
+    EN_RECOMPUTE_FULL,      /* Full recompute requested. */
+    EN_RECOMPUTE_MAX,
+};
+
 struct engine_stats {
     uint64_t recompute;
     uint64_t compute;
@@ -140,6 +147,9 @@ struct engine_node {
 
     /* State of the node after the last engine run. */
     enum engine_node_state state;
+
+    /* This node needs to be processed by the upcoming partial recompute. */
+    bool pending_recompute;
 
     /* Method to allocate and initialize node data. It may be NULL.
      * The user supplied argument 'arg' is passed from the call to
@@ -216,7 +226,7 @@ void engine_add_input(struct engine_node *node, struct engine_node *input,
  * in circumstances when we are not sure there is change or not, or
  * when there is change but the engine couldn't be executed in that
  * iteration, and the change can't be tracked across iterations */
-void engine_set_force_recompute(bool val);
+void engine_request_recompute(enum engine_recompute_request val);
 
 /* Return the current engine_context. The values in the context can be NULL
  * if the engine is run with allow_recompute == false in the current
