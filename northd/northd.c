@@ -12638,8 +12638,7 @@ build_lrouter_in_unsnat_flow(struct hmap *lflows, struct ovn_datapath *od,
         ds_put_format(match, "ip && ip%s.dst == %s",
                       is_v6 ? "6" : "4", nat->external_ip);
         if (!strcmp(nat->type, "dnat_and_snat") && stateless) {
-            ds_put_format(actions, "ip%s.dst=%s; next;",
-                          is_v6 ? "6" : "4", nat->logical_ip);
+            ds_put_format(actions, "next;");
         } else {
             ds_put_cstr(actions, "ct_snat;");
         }
