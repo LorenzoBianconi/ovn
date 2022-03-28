@@ -12818,8 +12818,7 @@ build_lrouter_out_undnat_flow(struct hmap *lflows, struct ovn_datapath *od,
 
     if (!strcmp(nat->type, "dnat_and_snat") &&
         lrouter_nat_is_stateless(nat)) {
-        ds_put_format(actions, "ip%s.src=%s; next;",
-                      is_v6 ? "6" : "4", nat->external_ip);
+        ds_put_format(actions, "next;");
     } else {
         ds_put_format(actions,
                       od->is_gw_router ? "ct_dnat;" : "ct_dnat_in_czone;");
