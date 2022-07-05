@@ -4509,7 +4509,8 @@ send_garp_rarp(struct rconn *swconn, struct garp_rarp_data *garp_rarp,
         garp_rarp->backoff *= 2;
         garp_rarp->announce_time = current_time + garp_rarp->backoff * 1000;
     } else {
-        garp_rarp->announce_time = LLONG_MAX;
+        /* Default timeout is 180s. */
+        garp_rarp->announce_time = current_time + 180 * 1000;
     }
     return garp_rarp->announce_time;
 }
@@ -5487,14 +5488,15 @@ ip_mcast_querier_wait(long long int query_time)
 
 /* Get localnet vifs, local l3gw ports and ofport for localnet patch ports. */
 static void
-get_localnet_vifs_l3gwports(
+get_local_vifs_l3gwports(
     struct ovsdb_idl_index *sbrec_port_binding_by_datapath,
     struct ovsdb_idl_index *sbrec_port_binding_by_name,
     const struct ovsrec_bridge *br_int,
     const struct sbrec_chassis *chassis,
     const struct hmap *local_datapaths,
     struct sset *localnet_vifs,
-    struct sset *local_l3gw_ports)
+    struct sset *local_l3gw_ports,
+    struct sset *local_vifs)
 {
     for (int i = 0; i < br_int->n_ports; i++) {
         const struct ovsrec_port *port_rec = br_int->ports[i];
@@ -5551,7 +5553,8 @@ get_localnet_vifs_l3gwports(
         /* Get l3gw ports.  Consider port bindings with type "l3gateway"
          * that connect to gateway routers (if local), and consider port
          * bindings of type "patch" since they might connect to
-         * distributed gateway ports with NAT addresses. */
+         * distributed gateway ports with NAT addresses.
+         * Get LSP ports if requested by CMS. */
 
         sbrec_port_binding_index_set_datapath(target, ld->datapath);
         SBREC_PORT_BINDING_FOR_EACH_EQUAL (pb, target,
@@ -5559,6 +5562,11 @@ get_localnet_vifs_l3gwports(
             if (!strcmp(pb->type, "l3gateway")
                 || !strcmp(pb->type, "patch")) {
                 sset_add(local_l3gw_ports, pb->logical_port);
+            }
+            /* GARP packets for lsp ports. */
+            if (pb->chassis == chassis &&
+                smap_get_bool(&pb->options, "ovn-lsp-garp", false)) {
+                sset_add(local_vifs, pb->logical_port);
             }
         }
     }
@@ -5738,6 +5746,26 @@ send_garp_rarp_run(struct rconn *swconn, long long int *send_garp_rarp_time)
     }
 }
 
+static void
+send_garp_rarp_update_for_pb_set(
+        struct ovsdb_idl_txn *ovnsb_idl_txn,
+        struct ovsdb_idl_index *sbrec_mac_binding_by_lport_ip,
+        struct ovsdb_idl_index *sbrec_port_binding_by_name,
+        struct sset *vif_set, const struct hmap *local_datapaths,
+        struct shash *nat_addresses)
+{
+    const char *iface_id;
+    SSET_FOR_EACH (iface_id, vif_set) {
+        const struct sbrec_port_binding *pb = lport_lookup_by_name(
+            sbrec_port_binding_by_name, iface_id);
+        if (pb) {
+            send_garp_rarp_update(ovnsb_idl_txn,
+                                  sbrec_mac_binding_by_lport_ip,
+                                  local_datapaths, pb, nat_addresses);
+        }
+    }
+}
+
 /* Called by pinctrl_run(). Runs with in the main ovn-controller
  * thread context. */
 static void
@@ -5753,15 +5781,17 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
 {
     struct sset localnet_vifs = SSET_INITIALIZER(&localnet_vifs);
     struct sset local_l3gw_ports = SSET_INITIALIZER(&local_l3gw_ports);
+    struct sset local_vifs = SSET_INITIALIZER(&local_vifs);
     struct sset nat_ip_keys = SSET_INITIALIZER(&nat_ip_keys);
     struct shash nat_addresses;
 
     shash_init(&nat_addresses);
 
-    get_localnet_vifs_l3gwports(sbrec_port_binding_by_datapath,
-                                sbrec_port_binding_by_name,
-                                br_int, chassis, local_datapaths,
-                                &localnet_vifs, &local_l3gw_ports);
+    get_local_vifs_l3gwports(sbrec_port_binding_by_datapath,
+                             sbrec_port_binding_by_name,
+                             br_int, chassis, local_datapaths,
+                             &localnet_vifs, &local_l3gw_ports,
+                             &local_vifs);
 
     get_nat_addresses_and_keys(sbrec_port_binding_by_name,
                                &nat_ip_keys, &local_l3gw_ports,
@@ -5772,35 +5802,33 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
     struct shash_node *iter, *next;
     SHASH_FOR_EACH_SAFE (iter, next, &send_garp_rarp_data) {
         if (!sset_contains(&localnet_vifs, iter->name) &&
-            !sset_contains(&nat_ip_keys, iter->name)) {
+            !sset_contains(&nat_ip_keys, iter->name) &&
+            !sset_contains(&local_vifs, iter->name)) {
             send_garp_rarp_delete(iter->name);
         }
     }
 
     /* Update send_garp_rarp_data. */
-    const char *iface_id;
-    SSET_FOR_EACH (iface_id, &localnet_vifs) {
-        const struct sbrec_port_binding *pb = lport_lookup_by_name(
-            sbrec_port_binding_by_name, iface_id);
-        if (pb) {
-            send_garp_rarp_update(ovnsb_idl_txn, sbrec_mac_binding_by_lport_ip,
-                                  local_datapaths, pb, &nat_addresses);
-        }
-    }
-
+    send_garp_rarp_update_for_pb_set(ovnsb_idl_txn,
+                                     sbrec_mac_binding_by_lport_ip,
+                                     sbrec_port_binding_by_name,
+                                     &localnet_vifs, local_datapaths,
+                                     &nat_addresses);
+    send_garp_rarp_update_for_pb_set(ovnsb_idl_txn,
+                                     sbrec_mac_binding_by_lport_ip,
+                                     sbrec_port_binding_by_name,
+                                     &local_vifs, local_datapaths,
+                                     &nat_addresses);
     /* Update send_garp_rarp_data for nat-addresses. */
-    const char *gw_port;
-    SSET_FOR_EACH (gw_port, &local_l3gw_ports) {
-        const struct sbrec_port_binding *pb
-            = lport_lookup_by_name(sbrec_port_binding_by_name, gw_port);
-        if (pb) {
-            send_garp_rarp_update(ovnsb_idl_txn, sbrec_mac_binding_by_lport_ip,
-                                  local_datapaths, pb, &nat_addresses);
-        }
-    }
+    send_garp_rarp_update_for_pb_set(ovnsb_idl_txn,
+                                     sbrec_mac_binding_by_lport_ip,
+                                     sbrec_port_binding_by_name,
+                                     &local_l3gw_ports, local_datapaths,
+                                     &nat_addresses);
 
     /* pinctrl_handler thread will send the GARPs. */
 
+    sset_destroy(&local_vifs);
     sset_destroy(&localnet_vifs);
     sset_destroy(&local_l3gw_ports);
 

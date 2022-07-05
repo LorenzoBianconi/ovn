@@ -6546,6 +6546,34 @@ ovn_update_ipv6_options(struct hmap *ports)
 }
 
 static void
+ovn_update_lsp_garp_options(struct hmap *ports)
+{
+    struct ovn_port *op;
+    HMAP_FOR_EACH (op, key_node, ports) {
+        if (!op->nbsp) {
+            continue;
+        }
+        if (op->nbsp->type[0] || op->nbsp->parent_name) {
+            continue;
+        }
+
+        struct ovn_datapath *od = op->od;
+        if (!od || !od->nbs) {
+            continue;
+        }
+
+        struct smap options;
+        smap_clone(&options, &op->sb->options);
+
+        bool ovn_lsp_garp = smap_get_bool(&od->nbs->other_config,
+                                          "ovn-lsp-garp", false);
+        smap_add(&options, "ovn-lsp-garp", ovn_lsp_garp ? "true" : "false");
+        sbrec_port_binding_set_options(op->sb, &options);
+        smap_destroy(&options);
+    }
+}
+
+static void
 build_port_group_lswitches(struct northd_input *input_data,
                            struct hmap *pgs,
                            struct hmap *ports)
@@ -15271,6 +15299,7 @@ ovnnb_db_run(struct northd_input *input_data,
     stopwatch_start(CLEAR_LFLOWS_CTX_STOPWATCH_NAME, time_msec());
     ovn_update_ipv6_options(&data->ports);
     ovn_update_ipv6_prefix(&data->ports);
+    ovn_update_lsp_garp_options(&data->ports);
 
     sync_address_sets(input_data,  ovnsb_txn, &data->datapaths);
     sync_port_groups(input_data, ovnsb_txn, &data->port_groups);
