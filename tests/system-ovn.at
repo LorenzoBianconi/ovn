@@ -5265,11 +5265,6 @@ ovn-nbctl lsp-add public public1 \
         -- lsp-set-type public1 localnet \
         -- lsp-set-options public1 network_name=phynet
 
-ovn-nbctl set logical_router_port rp-public options:prefix_delegation=true
-ovn-nbctl set logical_router_port rp-public options:prefix=true
-ovn-nbctl set logical_router_port rp-sw0 options:prefix=true
-ovn-nbctl set logical_router_port rp-sw1 options:prefix=true
-
 cat > /etc/dhcp/dhcpd.conf <<EOF
 option dhcp-rebinding-time 15;
 option dhcp-renewal-time 10;
@@ -5284,8 +5279,18 @@ chown root:dhcpd /var/lib/dhcp /var/lib/dhcp/dhcpd6.leases
 chmod 775 /var/lib/dhcp
 chmod 664 /var/lib/dhcp/dhcpd6.leases
 
+NS_CHECK_EXEC([server], [tcpdump -nni s1 > debug.pcap &])
 NS_CHECK_EXEC([server], [dhcpd -6 -f s1 > dhcpd.log &])
+
+ovn-nbctl set logical_router_port rp-public options:prefix_delegation=true
+ovn-nbctl set logical_router_port rp-public options:prefix=true
+ovn-nbctl set logical_router_port rp-sw0 options:prefix=true
+ovn-nbctl set logical_router_port rp-sw1 options:prefix=true
+
 ovn-nbctl --wait=hv sync
+
+sleep 7
+kill $(pidof tcpdump)
 
 OVS_WAIT_WHILE([test "$(ovn-nbctl get logical_router_port rp-public ipv6_prefix | cut -c4-15)" = ""])
 OVS_WAIT_WHILE([test "$(ovn-nbctl get logical_router_port rp-sw0 ipv6_prefix | cut -c4-15)" = ""])

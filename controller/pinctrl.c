@@ -1257,15 +1257,15 @@ fill_ipv6_prefix_state(struct ovsdb_idl_txn *ovnsb_idl_txn,
                 !ipv6_parse(prefix_s, &pfd->prefix)) {
                 pfd->prefix = in6addr_any;
             }
+            //VLOG_WARN("%s-%d: creating entry for port %s\n", __func__, __LINE__, pb->logical_port);
         } else if (pfd->state == PREFIX_PENDING && ovnsb_idl_txn) {
             char prefix_str[INET6_ADDRSTRLEN + 1] = {};
             if (!ipv6_string_mapped(prefix_str, &pfd->prefix)) {
                 goto out;
             }
-            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(20, 40);
-            VLOG_DBG_RL(&rl, "updating port_binding for %s with prefix %s/%d"
-                        " aid %d", pb->logical_port, prefix_str, pfd->plen,
-                        pfd->aid);
+            //static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(20, 40);
+            //VLOG_WARN("%s-%d: updating port_binding for %s with prefix %s/%d aid %d\n", __func__, __LINE__,
+            //          pb->logical_port, prefix_str, pfd->plen, pfd->aid);
 
             pfd->state = PREFIX_DONE;
             pfd->last_complete = time_msec();
