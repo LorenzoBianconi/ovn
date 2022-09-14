@@ -4122,7 +4122,8 @@ build_lrouter_lbs_reachable_ips(struct hmap *datapaths, struct hmap *lbs,
 }
 
 static void
-build_lswitch_lbs_from_lrouter(struct hmap *datapaths, struct hmap *lbs)
+build_lswitch_lbs_from_lrouter(struct hmap *datapaths, struct hmap *lbs,
+                               struct hmap *lb_groups)
 {
     if (!install_ls_lb_from_router) {
         return;
@@ -4134,38 +4135,37 @@ build_lswitch_lbs_from_lrouter(struct hmap *datapaths, struct hmap *lbs)
             continue;
         }
 
-        struct ovn_port *op;
-        LIST_FOR_EACH (op, dp_node, &od->port_list) {
-            if (!lsp_is_router(op->nbsp)) {
-                continue;
-            }
-            if (!op->peer) {
-                continue;
+        for (size_t i = 0; i < od->n_router_ports; i++) {
+            struct ovn_port *op = od->router_ports[i];
+            struct ovn_datapath *peer_od = op->peer->od;
+
+            for (size_t j = 0; j < peer_od->nbr->n_load_balancer; j++) {
+                const struct uuid *lb_uuid =
+                    &peer_od->nbr->load_balancer[j]->header_.uuid;
+                struct ovn_northd_lb *lb = ovn_northd_lb_find(lbs, lb_uuid);
+                if (lb) {
+                    ovn_northd_lb_add_ls(lb, 1, &od);
+                }
             }
 
-            struct ovn_datapath *peer_od = op->peer->od;
-            for (size_t i = 0; i < peer_od->nbr->n_load_balancer; i++) {
-                bool installed = false;
-                const struct uuid *lb_uuid =
-                    &peer_od->nbr->load_balancer[i]->header_.uuid;
-                struct ovn_northd_lb *lb = ovn_northd_lb_find(lbs, lb_uuid);
-                if (!lb) {
+            for (size_t j = 0; j < peer_od->nbr->n_load_balancer_group; j++) {
+                const struct nbrec_load_balancer_group *nbrec_lb_group;
+                struct ovn_lb_group *lb_group;
+
+                nbrec_lb_group = peer_od->nbr->load_balancer_group[j];
+                lb_group = ovn_lb_group_find(lb_groups,
+                                             &nbrec_lb_group->header_.uuid);
+                if (!lb_group) {
                     continue;
                 }
 
-                for (size_t j = 0; j < lb->n_nb_ls; j++) {
-                   if (lb->nb_ls[j] == od) {
-                       installed = true;
-                       break;
-                   }
-                }
-                if (!installed) {
-                    ovn_northd_lb_add_ls(lb, 1, &od);
-                }
-                if (lb->nlb) {
-                    od->has_lb_vip |= lb_has_vip(lb->nlb);
+                ovn_lb_group_add_ls(lb_group, od);
+                for (size_t k = 0; k < lb_group->n_lbs; k++) {
+                    ovn_northd_lb_add_ls(lb_group->lbs[k], 1, &od);
                 }
             }
+
+            od->has_lb_vip = ls_has_lb_vip(od);
         }
     }
 }
@@ -4183,7 +4183,7 @@ build_lb_port_related_data(struct hmap *datapaths, struct hmap *ports,
     build_lrouter_lbs_check(datapaths);
     build_lrouter_lbs_reachable_ips(datapaths, lbs, lb_groups);
     build_lb_svcs(input_data, ovnsb_txn, ports, lbs);
-    build_lswitch_lbs_from_lrouter(datapaths, lbs);
+    build_lswitch_lbs_from_lrouter(datapaths, lbs, lb_groups);
 }
 
 
