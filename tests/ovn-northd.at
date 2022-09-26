@@ -2149,9 +2149,9 @@ AT_CAPTURE_FILE([sw1flows])
 
 AT_CHECK(
   [grep -E 'ls_(in|out)_acl' sw0flows sw1flows | grep pg0 | sort], [0], [dnl
-sw0flows:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
+sw0flows:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
 sw0flows:  table=8 (ls_in_acl          ), priority=2002 , match=(inport == @pg0 && ip4 && tcp && tcp.dst == 80), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=egress,table=5); };)
-sw1flows:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
+sw1flows:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
 sw1flows:  table=8 (ls_in_acl          ), priority=2002 , match=(inport == @pg0 && ip4 && tcp && tcp.dst == 80), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=egress,table=5); };)
 ])
 
@@ -2165,10 +2165,10 @@ ovn-sbctl dump-flows sw1 > sw1flows2
 AT_CAPTURE_FILE([sw1flows2])
 
 AT_CHECK([grep "ls_out_acl" sw0flows2 sw1flows2 | grep pg0 | sort], [0], [dnl
-sw0flows2:  table=4 (ls_out_acl         ), priority=2002 , match=(outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw0flows2:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw1flows2:  table=4 (ls_out_acl         ), priority=2002 , match=(outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw1flows2:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
+sw0flows2:  table=4 (ls_out_acl         ), priority=2002 , match=(outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw0flows2:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw1flows2:  table=4 (ls_out_acl         ), priority=2002 , match=(outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw1flows2:  table=4 (ls_out_acl         ), priority=2003 , match=(outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
 ])
 
 AS_BOX([3])
@@ -2183,16 +2183,16 @@ AT_CAPTURE_FILE([sw1flows3])
 AT_CHECK([grep "ls_out_acl" sw0flows3 sw1flows3 | grep pg0 | sort], [0], [dnl
 sw0flows3:  table=4 (ls_out_acl         ), priority=2001 , match=(reg0[[7]] == 1 && (outport == @pg0 && ip)), action=(reg0[[1]] = 1; next;)
 sw0flows3:  table=4 (ls_out_acl         ), priority=2001 , match=(reg0[[8]] == 1 && (outport == @pg0 && ip)), action=(next;)
-sw0flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[10]] == 1) && outport == @pg0 && ip4 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw0flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[9]] == 1) && outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw0flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[10]] == 1) && outport == @pg0 && ip6 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw0flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[9]] == 1) && outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
+sw0flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[10]] == 1) && outport == @pg0 && ip4 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw0flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[9]] == 1) && outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw0flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[10]] == 1) && outport == @pg0 && ip6 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw0flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[9]] == 1) && outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
 sw1flows3:  table=4 (ls_out_acl         ), priority=2001 , match=(reg0[[7]] == 1 && (outport == @pg0 && ip)), action=(reg0[[1]] = 1; next;)
 sw1flows3:  table=4 (ls_out_acl         ), priority=2001 , match=(reg0[[8]] == 1 && (outport == @pg0 && ip)), action=(next;)
-sw1flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[10]] == 1) && outport == @pg0 && ip4 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw1flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[9]] == 1) && outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw1flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[10]] == 1) && outport == @pg0 && ip6 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
-sw1flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[9]] == 1) && outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=23); };)
+sw1flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[10]] == 1) && outport == @pg0 && ip4 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw1flows3:  table=4 (ls_out_acl         ), priority=2002 , match=((reg0[[9]] == 1) && outport == @pg0 && ip4 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw1flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[10]] == 1) && outport == @pg0 && ip6 && udp), action=(ct_commit { ct_mark.blocked = 1; };  reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
+sw1flows3:  table=4 (ls_out_acl         ), priority=2003 , match=((reg0[[9]] == 1) && outport == @pg0 && ip6 && udp), action=(reg0 = 0; reject { /* eth.dst <-> eth.src; ip.dst <-> ip.src; is implicit. */ outport <-> inport; next(pipeline=ingress,table=25); };)
 ])
 AT_CLEANUP
 ])
@@ -2364,7 +2364,7 @@ check ovn-nbctl --wait=sb \
     -- ls-lb-add ls lb
 
 AT_CHECK([ovn-sbctl lflow-list ls | grep -e ls_in_acl_hint -e ls_out_acl_hint -e ls_in_acl -e ls_out_acl | sort], [0], [dnl
-  table=12(ls_in_acl_after_lb ), priority=0    , match=(1), action=(next;)
+  table=14(ls_in_acl_after_lb ), priority=0    , match=(1), action=(next;)
   table=3 (ls_out_acl_hint    ), priority=0    , match=(1), action=(next;)
   table=3 (ls_out_acl_hint    ), priority=1    , match=(ct.est && ct_mark.blocked == 0), action=(reg0[[10]] = 1; next;)
   table=3 (ls_out_acl_hint    ), priority=2    , match=(ct.est && ct_mark.blocked == 1), action=(reg0[[9]] = 1; next;)
@@ -2407,7 +2407,7 @@ ovn-nbctl --wait=sb clear logical_switch ls acls
 ovn-nbctl --wait=sb clear logical_switch ls load_balancer
 
 AT_CHECK([ovn-sbctl lflow-list ls | grep -e ls_in_acl_hint -e ls_out_acl_hint -e ls_in_acl -e ls_out_acl | sort], [0], [dnl
-  table=12(ls_in_acl_after_lb ), priority=0    , match=(1), action=(next;)
+  table=14(ls_in_acl_after_lb ), priority=0    , match=(1), action=(next;)
   table=3 (ls_out_acl_hint    ), priority=65535, match=(1), action=(next;)
   table=4 (ls_out_acl         ), priority=65535, match=(1), action=(next;)
   table=7 (ls_in_acl_hint     ), priority=65535, match=(1), action=(next;)
@@ -3640,11 +3640,11 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.40:8080);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.40:8080);)
 ])
 
 AT_CHECK([grep "lr_out_undnat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -3676,11 +3676,11 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
 ])
 
 AT_CHECK([grep "lr_out_snat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -3722,11 +3722,11 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
 ])
 
 AT_CHECK([grep "lr_out_snat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -3782,11 +3782,11 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.100 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
 ])
 
 AT_CHECK([grep "lr_out_snat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -3829,8 +3829,8 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | grep skip_snat_for_lb | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.20 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.skip_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.20 && tcp && reg9[[16..31]] == 80), action=(flags.skip_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.20 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.skip_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.20 && tcp && reg9[[16..31]] == 80), action=(flags.skip_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.40:8080);)
 ])
 
 AT_CHECK([grep "lr_out_snat" lr0flows | grep skip_snat_for_lb | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -3998,7 +3998,7 @@ check_stateful_flows() {
   table=? (ls_in_pre_stateful ), priority=120  , match=(ip4.dst == 10.0.0.20 && tcp.dst == 80), action=(reg1 = 10.0.0.20; reg2[[0..15]] = 80; ct_lb_mark;)
 ])
 
-    AT_CHECK([grep "ls_in_lb" sw0flows | sort | sed 's/table=../table=??/'], [0], [dnl
+    AT_CHECK([grep "ls_in_lb " sw0flows | sort | sed 's/table=../table=??/'], [0], [dnl
   table=??(ls_in_lb           ), priority=0    , match=(1), action=(next;)
   table=??(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 10.0.0.10 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.4:8080);)
   table=??(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 10.0.0.20 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.40:8080);)
@@ -4064,7 +4064,7 @@ AT_CHECK([grep "ls_in_pre_stateful" sw0flows | sort | sed 's/table=./table=?/'],
   table=? (ls_in_pre_stateful ), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb_mark;)
 ])
 
-AT_CHECK([grep "ls_in_lb" sw0flows | sort | sed 's/table=../table=??/'], [0], [dnl
+AT_CHECK([grep "ls_in_lb " sw0flows | sort | sed 's/table=../table=??/'], [0], [dnl
   table=??(ls_in_lb           ), priority=0    , match=(1), action=(next;)
 ])
 
@@ -4925,7 +4925,7 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
 ])
 
 AT_CHECK([grep "lr_out_undnat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -4961,7 +4961,7 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
 ])
 
 AT_CHECK([grep "lr_out_undnat" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5013,8 +5013,8 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20 && inport == "lr0-public" && is_chassis_resident("cr-lr0-public")), action=(ct_dnat_in_czone(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20 && inport == "lr0-public" && is_chassis_resident("cr-lr0-public")), action=(ct_dnat_in_czone(10.0.0.3);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5080,16 +5080,16 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20 && inport == "lr0-public" && is_chassis_resident("cr-lr0-public")), action=(ct_dnat_in_czone(10.0.0.3);)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20 && inport == "lr0-public" && is_chassis_resident("cr-lr0-public")), action=(ct_dnat_in_czone(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1 && is_chassis_resident("cr-lr0-public")), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && is_chassis_resident("cr-lr0-public")), action=(ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5149,16 +5149,16 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5210,16 +5210,16 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5274,18 +5274,18 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5351,20 +5351,20 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip6 && xxreg0 == def0::2 && tcp && reg9[[16..31]] == 8000 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip6 && xxreg0 == def0::2 && tcp && reg9[[16..31]] == 8000), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=[[aef0::2]]:80,[[aef0::3]]:80);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=100  , match=(ip && ip4.dst == 172.168.0.20), action=(flags.loopback = 1; ct_dnat(10.0.0.3);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 172.168.0.200 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 172.168.0.200), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.80,10.0.0.81);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip6 && xxreg0 == def0::2 && tcp && reg9[[16..31]] == 8000 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 10.0.0.10 && tcp && reg9[[16..31]] == 80), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.4:8080);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.10 && tcp && reg9[[16..31]] == 9082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.100 && tcp && reg9[[16..31]] == 8082), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:82,10.0.0.60:82);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip6 && xxreg0 == def0::2 && tcp && reg9[[16..31]] == 8000), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=[[aef0::2]]:80,[[aef0::3]]:80);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -5419,11 +5419,11 @@ AT_CHECK([grep "lr_in_defrag" lr0flows | sort], [0], [dnl
 ])
 
 AT_CHECK([grep "lr_in_dnat" lr0flows | sort], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && tcp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && tcp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
-  table=6 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=0    , match=(1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && tcp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.est && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60 && ct_mark.natted == 1), action=(flags.force_snat_for_lb = 1; next;)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && tcp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
+  table=7 (lr_in_dnat         ), priority=120  , match=(ct.new && ip4 && reg0 == 172.168.0.210 && udp && reg9[[16..31]] == 60), action=(flags.force_snat_for_lb = 1; ct_lb_mark(backends=10.0.0.50:6062,10.0.0.60:6062);)
 ])
 
 AT_CHECK([grep "lr_out_chk_dnat_local" lr0flows | sed 's/table=./table=?/' | sort], [0], [dnl
@@ -6513,7 +6513,7 @@ AT_CHECK([grep -e "ls_in_acl" lsflows | sed 's/table=../table=??/' | sort], [0],
   table=??(ls_in_acl_hint     ), priority=7    , match=(ct.new && !ct.est), action=(reg0[[7]] = 1; reg0[[9]] = 1; next;)
 ])
 
-AT_CHECK([grep -e "ls_in_lb" lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
+AT_CHECK([grep -e "ls_in_lb " lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
   table=??(ls_in_lb           ), priority=0    , match=(1), action=(next;)
   table=??(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 10.0.0.2), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.10);)
 ])
@@ -6566,7 +6566,7 @@ AT_CHECK([grep -e "ls_in_acl" lsflows | sed 's/table=../table=??/' | sort], [0],
   table=??(ls_in_acl_hint     ), priority=7    , match=(ct.new && !ct.est), action=(reg0[[7]] = 1; reg0[[9]] = 1; next;)
 ])
 
-AT_CHECK([grep -e "ls_in_lb" lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
+AT_CHECK([grep -e "ls_in_lb " lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
   table=??(ls_in_lb           ), priority=0    , match=(1), action=(next;)
   table=??(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 10.0.0.2), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.10);)
 ])
@@ -6619,7 +6619,7 @@ AT_CHECK([grep -e "ls_in_acl" lsflows | sed 's/table=../table=??/' | sort], [0],
   table=??(ls_in_acl_hint     ), priority=7    , match=(ct.new && !ct.est), action=(reg0[[7]] = 1; reg0[[9]] = 1; next;)
 ])
 
-AT_CHECK([grep -e "ls_in_lb" lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
+AT_CHECK([grep -e "ls_in_lb " lsflows | sed 's/table=../table=??/' | sort], [0], [dnl
   table=??(ls_in_lb           ), priority=0    , match=(1), action=(next;)
   table=??(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 10.0.0.2), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.10);)
 ])
@@ -7587,7 +7587,7 @@ sort | sed 's/table=../table=??/' ], [0], [dnl
   table=??(ls_in_check_port_sec), priority=100  , match=(vlan.present), action=(drop;)
   table=??(ls_in_check_port_sec), priority=50   , match=(1), action=(reg0[[15]] = check_in_port_sec(); next;)
   table=??(ls_in_check_port_sec), priority=70   , match=(inport == "localnetport"), action=(set_queue(10); reg0[[15]] = check_in_port_sec(); next;)
-  table=??(ls_in_check_port_sec), priority=70   , match=(inport == "sw0p1"), action=(reg0[[14]] = 1; next(pipeline=ingress, table=16);)
+  table=??(ls_in_check_port_sec), priority=70   , match=(inport == "sw0p1"), action=(reg0[[14]] = 1; next(pipeline=ingress, table=18);)
   table=??(ls_in_check_port_sec), priority=70   , match=(inport == "sw0p2"), action=(set_queue(10); reg0[[15]] = check_in_port_sec(); next;)
   table=??(ls_in_apply_port_sec), priority=0    , match=(1), action=(next;)
   table=??(ls_in_apply_port_sec), priority=50   , match=(reg0[[15]] == 1), action=(drop;)
@@ -7624,11 +7624,11 @@ check ovn-nbctl                                               \
 AS_BOX([No chassis registered - use ct_lb_mark and ct_mark.natted])
 check ovn-nbctl --wait=sb sync
 AT_CHECK([ovn-sbctl lflow-list | grep -e natted -e ct_lb], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb_mark(backends=42.42.42.2);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb_mark(backends=42.42.42.2);)
   table=6 (ls_in_pre_stateful ), priority=120  , match=(ip4.dst == 66.66.66.66), action=(reg1 = 66.66.66.66; ct_lb_mark;)
   table=6 (ls_in_pre_stateful ), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb_mark;)
-  table=11(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb_mark(backends=42.42.42.2);)
+  table=12(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb_mark(backends=42.42.42.2);)
   table=2 (ls_out_pre_stateful), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb_mark;)
 ])
 
@@ -7636,11 +7636,11 @@ AS_BOX([Chassis registered that doesn't support ct_lb_mark - use ct_lb and ct_la
 check ovn-sbctl chassis-add hv geneve 127.0.0.1
 check ovn-nbctl --wait=sb sync
 AT_CHECK([ovn-sbctl lflow-list | grep -e natted -e ct_lb], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_label.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb(backends=42.42.42.2);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_label.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb(backends=42.42.42.2);)
   table=6 (ls_in_pre_stateful ), priority=120  , match=(ip4.dst == 66.66.66.66), action=(reg1 = 66.66.66.66; ct_lb;)
   table=6 (ls_in_pre_stateful ), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb;)
-  table=11(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb(backends=42.42.42.2);)
+  table=12(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb(backends=42.42.42.2);)
   table=2 (ls_out_pre_stateful), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb;)
 ])
 
@@ -7648,11 +7648,11 @@ AS_BOX([Chassis upgrades and supports ct_lb_mark - use ct_lb_mark and ct_mark.na
 check ovn-sbctl set chassis hv other_config:ct-no-masked-label=true
 check ovn-nbctl --wait=sb sync
 AT_CHECK([ovn-sbctl lflow-list | grep -e natted -e ct_lb], [0], [dnl
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_mark.natted == 1), action=(next;)
-  table=6 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb_mark(backends=42.42.42.2);)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.est && ip4 && reg0 == 66.66.66.66 && ct_mark.natted == 1), action=(next;)
+  table=7 (lr_in_dnat         ), priority=110  , match=(ct.new && ip4 && reg0 == 66.66.66.66), action=(ct_lb_mark(backends=42.42.42.2);)
   table=6 (ls_in_pre_stateful ), priority=120  , match=(ip4.dst == 66.66.66.66), action=(reg1 = 66.66.66.66; ct_lb_mark;)
   table=6 (ls_in_pre_stateful ), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb_mark;)
-  table=11(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb_mark(backends=42.42.42.2);)
+  table=12(ls_in_lb           ), priority=110  , match=(ct.new && ip4.dst == 66.66.66.66), action=(reg0[[1]] = 0; ct_lb_mark(backends=42.42.42.2);)
   table=2 (ls_out_pre_stateful), priority=110  , match=(reg0[[2]] == 1), action=(ct_lb_mark;)
 ])
 
@@ -7806,11 +7806,11 @@ ovn-sbctl dump-flows S1 > S1flows
 AT_CAPTURE_FILE([S0flows])
 AT_CAPTURE_FILE([S1flows])
 
-AT_CHECK([grep "ls_in_lb" S0flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+AT_CHECK([grep "ls_in_lb " S0flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
 ])
-AT_CHECK([grep "ls_in_lb" S1flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+AT_CHECK([grep "ls_in_lb " S1flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
 ])
 
 ovn-nbctl --wait=sb set NB_Global . options:install_ls_lb_from_router=true
@@ -7821,13 +7821,13 @@ ovn-sbctl dump-flows S1 > S1flows
 AT_CAPTURE_FILE([S0flows])
 AT_CAPTURE_FILE([S1flows])
 
-AT_CHECK([grep "ls_in_lb" S0flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
-  table=11(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 172.16.0.10 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.2:80);)
+AT_CHECK([grep "ls_in_lb " S0flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+  table=12(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 172.16.0.10 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.2:80);)
 ])
-AT_CHECK([grep "ls_in_lb" S1flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
-  table=11(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 172.16.0.10 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.2:80);)
+AT_CHECK([grep "ls_in_lb " S1flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+  table=12(ls_in_lb           ), priority=120  , match=(ct.new && ip4.dst == 172.16.0.10 && tcp.dst == 80), action=(reg0[[1]] = 0; ct_lb_mark(backends=10.0.0.2:80);)
 ])
 
 ovn-sbctl get datapath S0 _uuid > dp_uuids
@@ -7846,11 +7846,11 @@ ovn-sbctl dump-flows S1 > S1flows
 AT_CAPTURE_FILE([S0flows])
 AT_CAPTURE_FILE([S1flows])
 
-AT_CHECK([grep "ls_in_lb" S0flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+AT_CHECK([grep "ls_in_lb " S0flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
 ])
-AT_CHECK([grep "ls_in_lb" S1flows | sort], [0], [dnl
-  table=11(ls_in_lb           ), priority=0    , match=(1), action=(next;)
+AT_CHECK([grep "ls_in_lb " S1flows | sort], [0], [dnl
+  table=12(ls_in_lb           ), priority=0    , match=(1), action=(next;)
 ])
 
 check_column "" sb:load_balancer datapaths name=lb0
