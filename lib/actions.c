@@ -4679,27 +4679,29 @@ parse_commit_lb_aff(struct action_context *ctx,
     lexer_get(ctx->lexer);
     lexer_force_match(ctx->lexer, LEX_T_COMMA);
 
-    if (!lexer_match_id(ctx->lexer, "proto")) {
-        lexer_syntax_error(ctx->lexer, "invalid parameter");
-        return;
-    }
+    if (lb_aff->vip_port) {
+        if (!lexer_match_id(ctx->lexer, "proto")) {
+            lexer_syntax_error(ctx->lexer, "invalid parameter");
+            return;
+        }
 
-    if (!lexer_force_match(ctx->lexer, LEX_T_EQUALS)) {
-        lexer_syntax_error(ctx->lexer, "invalid parameter");
-        return;
-    }
+        if (!lexer_force_match(ctx->lexer, LEX_T_EQUALS)) {
+            lexer_syntax_error(ctx->lexer, "invalid parameter");
+            return;
+        }
 
-    if (lexer_match_id(ctx->lexer, "tcp")) {
-        lb_aff->proto = IPPROTO_TCP;
-    } else if (lexer_match_id(ctx->lexer, "udp")) {
-        lb_aff->proto = IPPROTO_UDP;
-    } else if (lexer_match_id(ctx->lexer, "sctp")) {
-        lb_aff->proto = IPPROTO_SCTP;
-    } else {
-        lexer_syntax_error(ctx->lexer, "invalid protocol");
-        return;
+        if (lexer_match_id(ctx->lexer, "tcp")) {
+            lb_aff->proto = IPPROTO_TCP;
+        } else if (lexer_match_id(ctx->lexer, "udp")) {
+            lb_aff->proto = IPPROTO_UDP;
+        } else if (lexer_match_id(ctx->lexer, "sctp")) {
+            lb_aff->proto = IPPROTO_SCTP;
+        } else {
+            lexer_syntax_error(ctx->lexer, "invalid protocol");
+            return;
+        }
+        lexer_force_match(ctx->lexer, LEX_T_COMMA);
     }
-    lexer_force_match(ctx->lexer, LEX_T_COMMA);
 
     if (!lexer_match_id(ctx->lexer, "timeout")) {
         lexer_syntax_error(ctx->lexer, "invalid parameter");
@@ -4751,21 +4753,23 @@ format_COMMIT_LB_AFF(const struct ovnact_commit_lb_aff *lb_aff, struct ds *s)
     }
     ds_put_cstr(s, "\"");
 
-    const char *proto;
-    switch (lb_aff->proto) {
-    case IPPROTO_UDP:
-        proto = "udp";
-        break;
-    case IPPROTO_SCTP:
-        proto = "sctp";
-        break;
-    case IPPROTO_TCP:
-    default:
-        proto = "tcp";
-        break;
+    if (lb_aff->proto) {
+        const char *proto;
+        switch (lb_aff->proto) {
+        case IPPROTO_UDP:
+            proto = "udp";
+            break;
+        case IPPROTO_SCTP:
+            proto = "sctp";
+            break;
+        case IPPROTO_TCP:
+        default:
+            proto = "tcp";
+            break;
+        }
+        ds_put_format(s, ", proto = %s", proto);
     }
-    ds_put_format(s, ", proto = %s, timeout = %d);",
-                  proto, lb_aff->timeout);
+    ds_put_format(s, ", timeout = %d);", lb_aff->timeout);
 }
 
 static void
@@ -4842,48 +4846,50 @@ encode_COMMIT_LB_AFF(const struct ovnact_commit_lb_aff *lb_aff,
     src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
     memcpy(src_imm, &imm_ip, imm_bytes);
 
-    /* IP proto. */
-    union mf_value imm_proto = {
-        .u8 = lb_aff->proto,
-    };
-    ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
-    ol_spec->dst.field = mf_from_id(MFF_IP_PROTO);
-    ol_spec->src.field = mf_from_id(MFF_IP_PROTO);
-    ol_spec->dst.ofs = 0;
-    ol_spec->dst.n_bits = ol_spec->dst.field->n_bits;
-    ol_spec->n_bits = ol_spec->dst.n_bits;
-    ol_spec->dst_type = NX_LEARN_DST_MATCH;
-    ol_spec->src_type = NX_LEARN_SRC_IMMEDIATE;
-    mf_write_subfield_value(&ol_spec->dst, &imm_proto, &match);
-    /* Push value last, as this may reallocate 'ol_spec' */
-    imm_bytes = DIV_ROUND_UP(ol_spec->dst.n_bits, 8);
-    src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
-    memcpy(src_imm, &imm_proto, imm_bytes);
+    if (lb_aff->proto) {
+        /* IP proto. */
+        union mf_value imm_proto = {
+            .u8 = lb_aff->proto,
+        };
+        ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
+        ol_spec->dst.field = mf_from_id(MFF_IP_PROTO);
+        ol_spec->src.field = mf_from_id(MFF_IP_PROTO);
+        ol_spec->dst.ofs = 0;
+        ol_spec->dst.n_bits = ol_spec->dst.field->n_bits;
+        ol_spec->n_bits = ol_spec->dst.n_bits;
+        ol_spec->dst_type = NX_LEARN_DST_MATCH;
+        ol_spec->src_type = NX_LEARN_SRC_IMMEDIATE;
+        mf_write_subfield_value(&ol_spec->dst, &imm_proto, &match);
+        /* Push value last, as this may reallocate 'ol_spec' */
+        imm_bytes = DIV_ROUND_UP(ol_spec->dst.n_bits, 8);
+        src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
+        memcpy(src_imm, &imm_proto, imm_bytes);
 
-    /* dst port */
-    ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
-    switch (lb_aff->proto) {
-    case IPPROTO_TCP:
-        ol_spec->dst.field = mf_from_id(MFF_TCP_DST);
-        ol_spec->src.field = mf_from_id(MFF_TCP_DST);
-        break;
-    case IPPROTO_UDP:
-        ol_spec->dst.field = mf_from_id(MFF_UDP_DST);
-        ol_spec->src.field = mf_from_id(MFF_UDP_DST);
-        break;
-    case IPPROTO_SCTP:
-        ol_spec->dst.field = mf_from_id(MFF_SCTP_DST);
-        ol_spec->src.field = mf_from_id(MFF_SCTP_DST);
-        break;
-    default:
-        OVS_NOT_REACHED();
-        break;
+        /* dst port */
+        ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
+        switch (lb_aff->proto) {
+        case IPPROTO_TCP:
+            ol_spec->dst.field = mf_from_id(MFF_TCP_DST);
+            ol_spec->src.field = mf_from_id(MFF_TCP_DST);
+            break;
+        case IPPROTO_UDP:
+            ol_spec->dst.field = mf_from_id(MFF_UDP_DST);
+            ol_spec->src.field = mf_from_id(MFF_UDP_DST);
+            break;
+        case IPPROTO_SCTP:
+            ol_spec->dst.field = mf_from_id(MFF_SCTP_DST);
+            ol_spec->src.field = mf_from_id(MFF_SCTP_DST);
+            break;
+        default:
+            OVS_NOT_REACHED();
+            break;
+        }
+        ol_spec->dst.ofs = 0;
+        ol_spec->dst.n_bits = ol_spec->dst.field->n_bits;
+        ol_spec->n_bits = ol_spec->dst.n_bits;
+        ol_spec->dst_type = NX_LEARN_DST_MATCH;
+        ol_spec->src_type = NX_LEARN_SRC_FIELD;
     }
-    ol_spec->dst.ofs = 0;
-    ol_spec->dst.n_bits = ol_spec->dst.field->n_bits;
-    ol_spec->n_bits = ol_spec->dst.n_bits;
-    ol_spec->dst_type = NX_LEARN_DST_MATCH;
-    ol_spec->src_type = NX_LEARN_SRC_FIELD;
 
     /* Set MLF_LOOKUP_COMMIT_ECMP_NH_BIT for ecmp replies. */
     ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
@@ -4932,24 +4938,26 @@ encode_COMMIT_LB_AFF(const struct ovnact_commit_lb_aff *lb_aff,
     src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
     memcpy(src_imm, &imm_backend_ip, imm_bytes);
 
-    /* Load backend port in REG8. */
-    union mf_value imm_backend_port;
-    ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
-    imm_backend_port = (union mf_value) {
-        .be16 = htons(lb_aff->backend_port),
-    };
+    if (lb_aff->backend_port) {
+        /* Load backend port in REG8. */
+        union mf_value imm_backend_port;
+        ol_spec = ofpbuf_put_zeros(ofpacts, sizeof *ol_spec);
+        imm_backend_port = (union mf_value) {
+            .be16 = htons(lb_aff->backend_port),
+        };
 
-    ol_spec->dst.field = mf_from_id(MFF_REG8);
-    ol_spec->dst_type = NX_LEARN_DST_LOAD;
-    ol_spec->src_type = NX_LEARN_SRC_IMMEDIATE;
-    ol_spec->dst.ofs = 0;
-    ol_spec->dst.n_bits = 8 * sizeof(lb_aff->backend_port);
-    ol_spec->n_bits = ol_spec->dst.n_bits;
-    mf_write_subfield_value(&ol_spec->dst, &imm_backend_port, &match);
-    /* Push value last, as this may reallocate 'ol_spec' */
-    imm_bytes = DIV_ROUND_UP(ol_spec->dst.n_bits, 8);
-    src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
-    memcpy(src_imm, &imm_backend_port, imm_bytes);
+        ol_spec->dst.field = mf_from_id(MFF_REG8);
+        ol_spec->dst_type = NX_LEARN_DST_LOAD;
+        ol_spec->src_type = NX_LEARN_SRC_IMMEDIATE;
+        ol_spec->dst.ofs = 0;
+        ol_spec->dst.n_bits = 8 * sizeof(lb_aff->backend_port);
+        ol_spec->n_bits = ol_spec->dst.n_bits;
+        mf_write_subfield_value(&ol_spec->dst, &imm_backend_port, &match);
+        /* Push value last, as this may reallocate 'ol_spec' */
+        imm_bytes = DIV_ROUND_UP(ol_spec->dst.n_bits, 8);
+        src_imm = ofpbuf_put_zeros(ofpacts, OFPACT_ALIGN(imm_bytes));
+        memcpy(src_imm, &imm_backend_port, imm_bytes);
+    }
 
     ol = ofpbuf_at_assert(ofpacts, ol_offset, sizeof *ol);
     ofpact_finish_LEARN(ofpacts, &ol);
