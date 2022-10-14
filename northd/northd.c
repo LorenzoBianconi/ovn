@@ -7011,9 +7011,13 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
             ds_put_format(&aff_action_learn, ":%d", backend->port);
         }
 
-        ds_put_format(&aff_action_learn,
-                      "\", proto = %s, timeout = %d); next;",
-                      lb->proto,
+        ds_put_format(&aff_action_learn, "\"");
+
+        if (lb_vip->vip_port) {
+            ds_put_format(&aff_action_learn, ", proto = %s", lb->proto);
+        }
+
+        ds_put_format(&aff_action_learn, ", timeout = %d); next;",
                       lb->affinity_timeout);
 
         struct ovn_lflow *lflow_ref_aff_learn = NULL;
