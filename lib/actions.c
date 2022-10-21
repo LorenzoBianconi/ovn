@@ -4625,17 +4625,9 @@ parse_commit_lb_aff(struct action_context *ctx,
     }
 
     if (!ip_address_and_port_from_lb_key(ctx->lexer->token.s, &ip_str,
-                                         &port, &vip_family)) {
+                                         &lb_aff->vip, &port, &vip_family)) {
         lexer_syntax_error(ctx->lexer, "invalid parameter");
         return;
-    }
-
-    if (vip_family == AF_INET) {
-        ovs_be32 ip4;
-        ip_parse(ip_str, &ip4);
-        in6_addr_set_mapped_ipv4(&lb_aff->vip, ip4);
-    } else {
-        ipv6_parse(ip_str, &lb_aff->vip);
     }
 
     lb_aff->vip_port = port;
@@ -4660,26 +4652,19 @@ parse_commit_lb_aff(struct action_context *ctx,
     }
 
     if (!ip_address_and_port_from_lb_key(ctx->lexer->token.s, &ip_str,
-                                         &port, &backend_family)) {
+                                         &lb_aff->backend, &port,
+                                         &backend_family)) {
         lexer_syntax_error(ctx->lexer, "invalid parameter");
         return;
     }
+    free(ip_str);
 
     if (backend_family != vip_family) {
         lexer_syntax_error(ctx->lexer, "invalid protocol family");
         return;
     }
 
-    if (backend_family == AF_INET) {
-        ovs_be32 ip4;
-        ip_parse(ip_str, &ip4);
-        in6_addr_set_mapped_ipv4(&lb_aff->backend, ip4);
-    } else {
-        ipv6_parse(ip_str, &lb_aff->backend);
-    }
-
     lb_aff->backend_port = port;
-    free(ip_str);
 
     lexer_get(ctx->lexer);
     lexer_force_match(ctx->lexer, LEX_T_COMMA);
