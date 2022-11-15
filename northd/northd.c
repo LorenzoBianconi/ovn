@@ -7000,10 +7000,16 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
     struct ds aff_match = DS_EMPTY_INITIALIZER;
 
     bool ipv6 = !IN6_IS_ADDR_V4MAPPED(&lb_vip->vip);
+    const char *reg_vip;
+    if (router_pipeline) {
+        reg_vip = ipv6 ? REG_NEXT_HOP_IPV6 : REG_NEXT_HOP_IPV4;
+    } else {
+        reg_vip = ipv6 ? REG_ORIG_DIP_IPV6 : REG_ORIG_DIP_IPV4;
+    }
+
     ds_put_format(&aff_action_lb_common,
                   REGBIT_CONNTRACK_COMMIT" = 0; %s = %s; ",
-                  ipv6 ? REG_SRC_IPV6 : REG_ORIG_DIP_IPV4,
-                  lb_vip->vip_str);
+                  reg_vip, lb_vip->vip_str);
     if (lb_vip->vip_port) {
         ds_put_format(&aff_action_lb_common, REG_ORIG_TP_DPORT" = %d; ",
                       lb_vip->vip_port);
@@ -7021,8 +7027,10 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
         struct ovn_lb_backend *backend = &lb_vip->backends[i];
 
         /* Forward to OFTABLE_CHK_LB_AFFINITY table to store flow tuple. */
-        ds_put_format(&aff_match_learn, "ct.new && %s.dst == %s",
-                      ipv6 ? "ip6" : "ip4", backend->ip_str);
+        ds_put_format(&aff_match_learn,
+                      "ct.new && %s && %s.dst == %s && %s == %s",
+                      ipv6 ? "ip6" : "ip4", ipv6 ? "ip6" : "ip4",
+                      backend->ip_str, reg_vip, lb_vip->vip_str);
         if (backend->port) {
             ds_put_format(&aff_match_learn, " && %s.dst == %d",
                           lb->proto, backend->port);
@@ -7059,6 +7067,14 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
                 ovn_stage_get_table(stage0), ovn_stage_get_pipeline(stage0),
                 100, ds_cstr(&aff_match_learn), ds_cstr(&aff_action_learn));
 
+        const char *reg_backend;
+        if (IN6_IS_ADDR_V4MAPPED(&lb_vip->vip)) {
+            reg_backend = REG_LB_AFF_BACKEND_IP4;
+        } else {
+            reg_backend = router_pipeline
+                ? REG_LB_L3_AFF_BACKEND_IP6 : REG_LB_L2_AFF_BACKEND_IP6;
+        }
+
         /* Use already selected backend within affinity
          * timeslot. */
         if (backend->port) {
@@ -7066,12 +7082,7 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
                 REGBIT_KNOWN_LB_SESSION" == 1 && %s && %s == %s "
                 "&& "REG_LB_AFF_MATCH_PORT" == %d",
                 IN6_IS_ADDR_V4MAPPED(&lb_vip->vip) ? "ip4" : "ip6",
-                IN6_IS_ADDR_V4MAPPED(&lb_vip->vip)
-                    ? REG_LB_AFF_BACKEND_IP4
-                    : router_pipeline
-                        ? REG_LB_L3_AFF_BACKEND_IP6
-                        : REG_LB_L2_AFF_BACKEND_IP6,
-                backend->ip_str, backend->port);
+                reg_backend, backend->ip_str, backend->port);
             ds_put_format(&aff_action_lb, "%s ct_lb_mark(backends=%s%s%s:%d);",
                           ds_cstr(&aff_action_lb_common),
                           ipv6 ? "[" : "", backend->ip_str,
@@ -7080,12 +7091,7 @@ build_lb_affinity_flows(struct hmap *lflows, struct ovn_northd_lb *lb,
             ds_put_format(&aff_match,
                 REGBIT_KNOWN_LB_SESSION" == 1 && %s && %s == %s",
                 IN6_IS_ADDR_V4MAPPED(&lb_vip->vip) ? "ip4" : "ip6",
-                IN6_IS_ADDR_V4MAPPED(&lb_vip->vip)
-                    ? REG_LB_AFF_BACKEND_IP4
-                    : router_pipeline
-                        ? REG_LB_L3_AFF_BACKEND_IP6
-                        : REG_LB_L2_AFF_BACKEND_IP6,
-                backend->ip_str);
+                reg_backend, backend->ip_str);
             ds_put_format(&aff_action_lb, "%s ct_lb_mark(backends=%s);",
                           ds_cstr(&aff_action_lb_common), backend->ip_str);
         }
