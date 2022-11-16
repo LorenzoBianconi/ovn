@@ -34,8 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         cfg:
-        - { compiler: gcc, testsuite: system-test, test_range: "-100" }
-        - { compiler: gcc, testsuite: system-test, test_range: "101-200" }
         - { compiler: gcc, testsuite: system-test, test_range: "201-" }
 
     steps:
