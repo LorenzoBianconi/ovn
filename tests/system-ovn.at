@@ -8613,7 +8613,6 @@ ovn-nbctl --wait=sb set load_balancer lb10 options:affinity_timeout=60
 for i in $(seq 1 20); do
     echo Request $i
     NS_CHECK_EXEC([alice1], [wget 172.16.1.100:8080 -t 5 -T 1 --retry-connrefused -v -o wget$i.log])
-    sleep 1
 done
 
 dnl here we should have just one entry in the ct table
@@ -8673,7 +8672,6 @@ ovn-nbctl ls-lb-add foo lb20
 for i in $(seq 1 20); do
     echo Request $i
     NS_CHECK_EXEC([foo1], [wget 192.168.2.100:8080 -t 5 -T 1 --retry-connrefused -v -o wget$i.log])
-    sleep 1
 done
 
 AT_CHECK([ovs-appctl dpctl/dump-conntrack | FORMAT_CT(192.168.2.100) |
@@ -8885,7 +8883,6 @@ ovn-nbctl --wait=sb set load_balancer lb10 options:affinity_timeout=60
 for i in $(seq 1 20); do
     echo Request $i
     NS_CHECK_EXEC([alice1], [wget http://[[fd30::1]]:8080 -t 5 -T 1 --retry-connrefused -v -o wget$i.log])
-    sleep 1
 done
 
 dnl here we should have just one entry in the ct table
@@ -8946,7 +8943,6 @@ ovn-nbctl ls-lb-add foo lb20
 for i in $(seq 1 20); do
     echo Request $i
     NS_CHECK_EXEC([foo1], [wget http://[[fd12::a]]:8080 -t 5 -T 1 --retry-connrefused -v -o wget$i.log])
-    sleep 1
 done
 
 dnl here we should have just one entry in the ct table
