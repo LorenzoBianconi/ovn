@@ -36,6 +36,7 @@
 #include "lport.h"
 #include "ovn-controller.h"
 #include "patch.h"
+#include "ovsport.h"
 
 VLOG_DEFINE_THIS_MODULE(binding);
 
@@ -175,17 +176,11 @@ get_qos_params(const struct sbrec_port_binding *pb, struct hmap *queue_map,
 static void
 add_ovs_qos_table_entry(struct ovsdb_idl_txn *ovs_idl_txn,
                         const struct ovsrec_qos_table *qos_table,
-                        const struct ovsrec_port_table *port_table,
+                        struct ovsdb_idl_index *ovsrec_port_by_name,
                         struct qos_queue *sb_info)
 {
-    const struct ovsrec_port *port = NULL, *iter;
-    OVSREC_PORT_TABLE_FOR_EACH (iter, port_table) {
-        if (!strcmp(iter->name, sb_info->port_name)) {
-            port = iter;
-            break;
-        }
-    }
-
+    const struct ovsrec_port *port =
+        ovsport_lookup_by_name(ovsrec_port_by_name, sb_info->port_name);
     if (!port) {
         return;
     }
@@ -257,9 +252,9 @@ add_ovs_qos_table_entry(struct ovsdb_idl_txn *ovs_idl_txn,
 }
 
 static void
-remove_stale_ovs_qos_entry(const struct ovsrec_port_table *port_table,
-                           const struct ovsrec_qos_table *qos_table,
+remove_stale_ovs_qos_entry(const struct ovsrec_qos_table *qos_table,
                            const struct sbrec_port_binding_table *pb_table,
+                           struct ovsdb_idl_index *ovsrec_port_by_qos,
                            struct smap *egress_ifaces)
 {
     const struct ovsrec_qos *qos, *qos_next;
@@ -268,14 +263,8 @@ remove_stale_ovs_qos_entry(const struct ovsrec_port_table *port_table,
             continue;
         }
 
-        const struct ovsrec_port *port = NULL, *iter;
-        OVSREC_PORT_TABLE_FOR_EACH (iter, port_table) {
-            if (iter->qos == qos) {
-                port = iter;
-                break;
-            }
-        }
-
+        const struct ovsrec_port *port =
+            ovsport_lookup_by_qos(ovsrec_port_by_qos, qos);
         struct ovsrec_queue *queue = qos->value_queues[0];
         bool stale = true;
         const struct sbrec_port_binding *pb;
@@ -323,22 +312,24 @@ remove_stale_ovs_qos_entry(const struct ovsrec_port_table *port_table,
 static void
 configure_ovs_qos(struct hmap *queue_map,
                   struct ovsdb_idl_txn *ovs_idl_txn,
-                  const struct ovsrec_port_table *port_table,
                   const struct ovsrec_qos_table *qos_table,
                   const struct sbrec_port_binding_table *pb_table,
+                  struct ovsdb_idl_index *ovsrec_port_by_name,
+                  struct ovsdb_idl_index *ovsrec_port_by_qos,
                   struct smap *egress_ifaces)
 
 {
     struct qos_queue *sb_info;
     HMAP_FOR_EACH (sb_info, node, queue_map) {
         /* Add new QoS entries. */
-        add_ovs_qos_table_entry(ovs_idl_txn, qos_table, port_table, sb_info);
+        add_ovs_qos_table_entry(ovs_idl_txn, qos_table,
+                                ovsrec_port_by_name, sb_info);
     }
 
     if (ovs_idl_txn) {
         /* Remove stale QoS entries. */
-        remove_stale_ovs_qos_entry(port_table, qos_table, pb_table,
-                                   egress_ifaces);
+        remove_stale_ovs_qos_entry(qos_table, pb_table,
+                                   ovsrec_port_by_qos, egress_ifaces);
     }
 }
 
@@ -2035,8 +2026,10 @@ binding_run(struct binding_ctx_in *b_ctx_in, struct binding_ctx_out *b_ctx_out)
     shash_destroy(&bridge_mappings);
 
     configure_ovs_qos(&qos_map, b_ctx_in->ovs_idl_txn,
-                      b_ctx_in->port_table, b_ctx_in->qos_table,
+                      b_ctx_in->qos_table,
                       b_ctx_in->port_binding_table,
+                      b_ctx_in->ovsrec_port_by_name,
+                      b_ctx_in->ovsrec_port_by_qos,
                       b_ctx_out->egress_ifaces);
     destroy_qos_map(&qos_map);
 
@@ -2509,8 +2502,10 @@ binding_handle_ovs_interface_changes(struct binding_ctx_in *b_ctx_in,
 
     if (handled) {
         configure_ovs_qos(&qos_map, b_ctx_in->ovs_idl_txn,
-                          b_ctx_in->port_table, b_ctx_in->qos_table,
+                          b_ctx_in->qos_table,
                           b_ctx_in->port_binding_table,
+                          b_ctx_in->ovsrec_port_by_name,
+                          b_ctx_in->ovsrec_port_by_qos,
                           b_ctx_out->egress_ifaces);
     }
     destroy_qos_map(&qos_map);
@@ -3033,8 +3028,10 @@ delete_done:
 
     if (handled) {
         configure_ovs_qos(&qos_map, b_ctx_in->ovs_idl_txn,
-                          b_ctx_in->port_table, b_ctx_in->qos_table,
+                          b_ctx_in->qos_table,
                           b_ctx_in->port_binding_table,
+                          b_ctx_in->ovsrec_port_by_name,
+                          b_ctx_in->ovsrec_port_by_qos,
                           b_ctx_out->egress_ifaces);
     }
 
