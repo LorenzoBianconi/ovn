@@ -6431,6 +6431,40 @@ AT_CHECK([ovn-nbctl remove Logical_Switch_Port public options qos_burst=6000000]
 
 OVS_WAIT_UNTIL([test "$(tc qdisc show | grep 'htb 1: dev ovs-public')" = ""])
 
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw01 options:qos_min_rate=300000])
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw01 options:qos_max_rate=400000])
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw01 options:qos_burst=3000000])
+
+OVS_WAIT_UNTIL([tc qdisc show | grep -q 'htb 1: dev ovs-sw01'])
+OVS_WAIT_UNTIL([tc class show dev ovs-sw01 | \
+                grep -q 'class htb .* rate 300Kbit ceil 400Kbit burst 375000b cburst 375000b'])
+
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw11 options:qos_min_rate=300000])
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw11 options:qos_max_rate=800000])
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw11 options:qos_burst=3000000])
+
+OVS_WAIT_UNTIL([tc qdisc show | grep -q 'htb 1: dev ovs-sw11'])
+OVS_WAIT_UNTIL([tc class show dev ovs-sw11 | \
+                grep -q 'class htb .* rate 300Kbit ceil 800Kbit burst 375000b cburst 375000b'])
+
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw01 options qos_min_rate=300000])
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw01 options qos_max_rate=400000])
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw01 options qos_burst=3000000])
+
+OVS_WAIT_UNTIL([test "$(tc qdisc show | grep 'htb 1: dev ovs-sw01')" = ""])
+
+AT_CHECK([ovn-nbctl set Logical_Switch_Port sw11 options:qos_max_rate=500000])
+
+OVS_WAIT_UNTIL([tc qdisc show | grep -q 'htb 1: dev ovs-sw11'])
+OVS_WAIT_UNTIL([tc class show dev ovs-sw11 | \
+                grep -q 'class htb .* rate 300Kbit ceil 500Kbit burst 375000b cburst 375000b'])
+
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw11 options qos_min_rate=300000])
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw11 options qos_max_rate=500000])
+AT_CHECK([ovn-nbctl remove Logical_Switch_Port sw11 options qos_burst=3000000])
+
+OVS_WAIT_UNTIL([test "$(tc qdisc show | grep 'htb 1: dev ovs-sw11')" = ""])
+
 kill $(pidof ovn-controller)
 
 as ovn-sb

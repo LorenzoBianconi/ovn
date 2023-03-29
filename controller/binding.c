@@ -255,6 +255,7 @@ static void
 remove_stale_ovs_qos_entry(const struct ovsrec_qos_table *qos_table,
                            const struct sbrec_port_binding_table *pb_table,
                            struct ovsdb_idl_index *ovsrec_port_by_qos,
+                           struct shash *local_bindings,
                            struct smap *egress_ifaces)
 {
     const struct ovsrec_qos *qos, *qos_next;
@@ -269,7 +270,8 @@ remove_stale_ovs_qos_entry(const struct ovsrec_qos_table *qos_table,
         bool stale = true;
         const struct sbrec_port_binding *pb;
         SBREC_PORT_BINDING_TABLE_FOR_EACH (pb, pb_table) {
-            if (get_lport_type(pb) != LP_LOCALNET) {
+            if (get_lport_type(pb) != LP_LOCALNET &&
+                !local_binding_find(local_bindings, pb->logical_port)) {
                 continue;
             }
 
@@ -316,7 +318,7 @@ configure_ovs_qos(struct hmap *queue_map,
                   const struct sbrec_port_binding_table *pb_table,
                   struct ovsdb_idl_index *ovsrec_port_by_name,
                   struct ovsdb_idl_index *ovsrec_port_by_qos,
-                  struct smap *egress_ifaces)
+                  struct shash *local_bindings, struct smap *egress_ifaces)
 
 {
     struct qos_queue *sb_info;
@@ -329,7 +331,8 @@ configure_ovs_qos(struct hmap *queue_map,
     if (ovs_idl_txn) {
         /* Remove stale QoS entries. */
         remove_stale_ovs_qos_entry(qos_table, pb_table,
-                                   ovsrec_port_by_qos, egress_ifaces);
+                                   ovsrec_port_by_qos, local_bindings,
+                                   egress_ifaces);
     }
 }
 
@@ -1858,6 +1861,8 @@ build_local_bindings(struct binding_ctx_in *b_ctx_in,
                 if (!lbinding) {
                     lbinding = local_binding_create(iface_id, iface_rec);
                     local_binding_add(local_bindings, lbinding);
+                    smap_replace(b_ctx_out->egress_ifaces, iface_id,
+                                 iface_rec->name);
                 } else {
                     lbinding->multiple_bindings = true;
                     static struct vlog_rate_limit rl =
@@ -2030,6 +2035,7 @@ binding_run(struct binding_ctx_in *b_ctx_in, struct binding_ctx_out *b_ctx_out)
                       b_ctx_in->port_binding_table,
                       b_ctx_in->ovsrec_port_by_name,
                       b_ctx_in->ovsrec_port_by_qos,
+                      &b_ctx_out->lbinding_data->bindings,
                       b_ctx_out->egress_ifaces);
     destroy_qos_map(&qos_map);
 
@@ -2151,6 +2157,8 @@ consider_iface_claim(const struct ovsrec_interface *iface_rec,
     } else {
         pb = b_lport->pb;
     }
+
+    smap_replace(b_ctx_out->egress_ifaces, iface_id, iface_rec->name);
 
     if (!pb) {
         /* There is no port_binding row for this local binding. */
@@ -2278,6 +2286,7 @@ consider_iface_release(const struct ovsrec_interface *iface_rec,
                              b_ctx_out->if_mgr);
     }
 
+    smap_remove(b_ctx_out->egress_ifaces, iface_id);
     remove_local_lports(iface_id, b_ctx_out);
     smap_remove(b_ctx_out->local_iface_ids, iface_rec->name);
 
@@ -2506,6 +2515,7 @@ binding_handle_ovs_interface_changes(struct binding_ctx_in *b_ctx_in,
                           b_ctx_in->port_binding_table,
                           b_ctx_in->ovsrec_port_by_name,
                           b_ctx_in->ovsrec_port_by_qos,
+                          &b_ctx_out->lbinding_data->bindings,
                           b_ctx_out->egress_ifaces);
     }
     destroy_qos_map(&qos_map);
@@ -3032,6 +3042,7 @@ delete_done:
                           b_ctx_in->port_binding_table,
                           b_ctx_in->ovsrec_port_by_name,
                           b_ctx_in->ovsrec_port_by_qos,
+                          &b_ctx_out->lbinding_data->bindings,
                           b_ctx_out->egress_ifaces);
     }
 
