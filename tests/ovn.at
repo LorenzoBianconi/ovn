@@ -9195,8 +9195,8 @@ as hv1 reset_pcap_file snoopvif hv1/snoopvif
 as hv2 reset_pcap_file snoopvif hv2/snoopvif
 
 AT_CHECK([ovn-nbctl --wait=hv set logical_router lr0 options:chassis=hv1])
-# set garp max timeout to 32s
-AT_CHECK([as hv1 ovs-vsctl set Open_vSwitch . external-ids:garp-max-timeout=2])
+# set garp max timeout to 2s
+AT_CHECK([as hv1 ovs-vsctl set Open_vSwitch . external-ids:garp-max-timeout-sec=2])
 
 OVS_WAIT_UNTIL([
 n_arp=$(tcpdump -c 10 -ner hv1/snoopvif-tx.pcap arp | wc -l)

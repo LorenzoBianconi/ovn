@@ -5923,7 +5923,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
         ovsrec_open_vswitch_table_first(ovs_table);
     if (cfg) {
         garp_max_timeout = smap_get_ullong(
-                &cfg->external_ids, "garp-max-timeout", LLONG_MAX);
+                &cfg->external_ids, "garp-max-timeout-sec", LLONG_MAX);
         if (!garp_max_timeout) {
             garp_max_timeout = LLONG_MAX;
         } else if (garp_max_timeout != LLONG_MAX) {
