@@ -165,7 +165,10 @@ VLOG_DEFINE_THIS_MODULE(pinctrl);
 static struct ovs_mutex pinctrl_mutex = OVS_MUTEX_INITIALIZER;
 static struct seq *pinctrl_handler_seq;
 static struct seq *pinctrl_main_seq;
-static long long int garp_rarp_max_timeout = LLONG_MAX;
+
+#define GARP_RARP_DEF_MAX_TIMEOUT    16000
+static long long int garp_rarp_max_timeout = GARP_RARP_DEF_MAX_TIMEOUT;
+static bool garp_rarp_continuous;
 
 static void *pinctrl_handler(void *arg);
 
@@ -4429,7 +4432,8 @@ send_garp_rarp_update(struct ovsdb_idl_txn *ovnsb_idl_txn,
                       const struct hmap *local_datapaths,
                       const struct sbrec_port_binding *binding_rec,
                       struct shash *nat_addresses,
-                      long long int garp_max_timeout)
+                      long long int garp_max_timeout,
+                      bool garp_continuous)
 {
     volatile struct garp_rarp_data *garp_rarp = NULL;
 
@@ -4455,7 +4459,8 @@ send_garp_rarp_update(struct ovsdb_idl_txn *ovnsb_idl_txn,
                 if (garp_rarp) {
                     garp_rarp->dp_key = binding_rec->datapath->tunnel_key;
                     garp_rarp->port_key = binding_rec->tunnel_key;
-                    if (garp_max_timeout != garp_rarp_max_timeout) {
+                    if (garp_max_timeout != garp_rarp_max_timeout ||
+                        garp_continuous != garp_rarp_continuous) {
                         /* reset backoff */
                         garp_rarp->announce_time = time_msec() + 1000;
                         garp_rarp->backoff = 1000; /* msec. */
@@ -4484,7 +4489,8 @@ send_garp_rarp_update(struct ovsdb_idl_txn *ovnsb_idl_txn,
                     if (garp_rarp) {
                         garp_rarp->dp_key = binding_rec->datapath->tunnel_key;
                         garp_rarp->port_key = binding_rec->tunnel_key;
-                        if (garp_max_timeout != garp_rarp_max_timeout) {
+                        if (garp_max_timeout != garp_rarp_max_timeout ||
+                            garp_continuous != garp_rarp_continuous) {
                             /* reset backoff */
                             garp_rarp->announce_time = time_msec() + 1000;
                             garp_rarp->backoff = 1000; /* msec. */
@@ -4508,7 +4514,8 @@ send_garp_rarp_update(struct ovsdb_idl_txn *ovnsb_idl_txn,
     if (garp_rarp) {
         garp_rarp->dp_key = binding_rec->datapath->tunnel_key;
         garp_rarp->port_key = binding_rec->tunnel_key;
-        if (garp_max_timeout != garp_rarp_max_timeout) {
+        if (garp_max_timeout != garp_rarp_max_timeout ||
+            garp_continuous != garp_rarp_continuous) {
             /* reset backoff */
             garp_rarp->announce_time = time_msec() + 1000;
             garp_rarp->backoff = 1000; /* msec. */
@@ -4600,19 +4607,12 @@ send_garp_rarp(struct rconn *swconn, struct garp_rarp_data *garp_rarp,
     /* Set the next announcement.  At most 5 announcements are sent for a
      * vif if garp_rarp_max_timeout is not specified otherwise cap the max
      * timeout to garp_rarp_max_timeout. */
-    if (garp_rarp_max_timeout != LLONG_MAX) {
-        if (garp_rarp->backoff < garp_rarp_max_timeout) {
-            garp_rarp->backoff *= 2;
-        } else {
-            garp_rarp->backoff = garp_rarp_max_timeout;
-        }
-        garp_rarp->announce_time = current_time + garp_rarp->backoff;
-    } else if (garp_rarp->backoff < 16000) {
-        garp_rarp->backoff *= 2;
+    if (garp_rarp_continuous || garp_rarp->backoff < garp_rarp_max_timeout) {
         garp_rarp->announce_time = current_time + garp_rarp->backoff;
     } else {
         garp_rarp->announce_time = LLONG_MAX;
     }
+    garp_rarp->backoff = MIN(garp_rarp_max_timeout, garp_rarp->backoff * 2);
 
     return garp_rarp->announce_time;
 }
@@ -5918,16 +5918,16 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
     struct sset local_l3gw_ports = SSET_INITIALIZER(&local_l3gw_ports);
     struct sset nat_ip_keys = SSET_INITIALIZER(&nat_ip_keys);
     struct shash nat_addresses;
-    unsigned long long garp_max_timeout = LLONG_MAX;
+    unsigned long long garp_max_timeout = GARP_RARP_DEF_MAX_TIMEOUT;
+    bool garp_continuous = false;
     const struct ovsrec_open_vswitch *cfg =
         ovsrec_open_vswitch_table_first(ovs_table);
     if (cfg) {
         garp_max_timeout = smap_get_ullong(
-                &cfg->external_ids, "garp-max-timeout-sec", LLONG_MAX);
+                &cfg->external_ids, "garp-max-timeout-sec", 0) * 1000;
+        garp_continuous = !!garp_max_timeout;
         if (!garp_max_timeout) {
-            garp_max_timeout = LLONG_MAX;
-        } else if (garp_max_timeout != LLONG_MAX) {
-            garp_max_timeout *= 1000; /* convert to msec. */
+            garp_max_timeout = GARP_RARP_DEF_MAX_TIMEOUT;
         }
     }
 
@@ -5961,7 +5961,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
             send_garp_rarp_update(ovnsb_idl_txn,
                                   sbrec_mac_binding_by_lport_ip,
                                   local_datapaths, pb, &nat_addresses,
-                                  garp_max_timeout);
+                                  garp_max_timeout, garp_continuous);
         }
     }
 
@@ -5973,7 +5973,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
         if (pb) {
             send_garp_rarp_update(ovnsb_idl_txn, sbrec_mac_binding_by_lport_ip,
                                   local_datapaths, pb, &nat_addresses,
-                                  garp_max_timeout);
+                                  garp_max_timeout, garp_continuous);
         }
     }
 
@@ -5993,6 +5993,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
     sset_destroy(&nat_ip_keys);
 
     garp_rarp_max_timeout = garp_max_timeout;
+    garp_rarp_continuous = garp_continuous;
 }
 
 static bool
