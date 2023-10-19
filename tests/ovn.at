@@ -26921,6 +26921,10 @@ store_ip_multicast_pkt \
     $(ip_to_hex 44 44 44 2) $(ip_to_hex 239 0 1 68) 1e 1e 7e6b 11 \
     e518e518000aed350000 expected_az1
 store_ip_multicast_pkt \
+    000000010100 01005e000144 \
+    $(ip_to_hex 44 44 44 2) $(ip_to_hex 239 0 1 68) 1e 1e 7e6b 11 \
+    e518e518000aed350000 expected_az1
+store_ip_multicast_pkt \
     000000020200 01005e000144 \
     $(ip_to_hex 44 44 44 2) $(ip_to_hex 239 0 1 68) 1e 1e 7e6b 11 \
     e518e518000aed350000 expected_az2
@@ -26930,6 +26934,12 @@ send_ip6_multicast_pkt hv2-vif1 hv2 \
     00100000000000000000000000000042 ff0adeadbeef00000000000000000001 \
     000e 40 11 \
     93407a69000e2b4e61736461640a
+store_ip6_multicast_pkt \
+    000000010100 333300000001 \
+    00100000000000000000000000000042 ff0adeadbeef00000000000000000001 \
+    000e 3e 11 \
+    93407a69000e2b4e61736461640a \
+    expected_az1
 store_ip6_multicast_pkt \
     000000010100 333300000001 \
     00100000000000000000000000000042 ff0adeadbeef00000000000000000001 \
