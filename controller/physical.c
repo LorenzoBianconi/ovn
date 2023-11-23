@@ -2390,6 +2390,35 @@ physical_run(struct physical_ctx *p_ctx,
                               p_ctx->chassis_tunnels, binding,
                               p_ctx->chassis, &p_ctx->debug,
                               p_ctx->if_mgr, flow_table, &ofpacts);
+
+        /* Add specif flows for E/W ICMPv{4,6} packets if tunnelled packets
+         * do not fit path MTU.
+         */
+        if (!strcmp(binding->type, "chassisredirect")) {
+            const char *distributed_port = smap_get_def(
+                    &binding->options, "distributed-port", "");
+            const struct sbrec_port_binding *distributed_binding
+                = lport_lookup_by_name(p_ctx->sbrec_port_binding_by_name,
+                                       distributed_port);
+            if (!distributed_binding ||
+                binding->datapath != distributed_binding->datapath) {
+                continue;
+            }
+
+            struct match match = MATCH_CATCHALL_INITIALIZER;
+            match_set_metadata(&match, htonll(binding->datapath->tunnel_key));
+            match_set_reg(&match, MFF_LOG_INPORT - MFF_REG0,
+                          binding->tunnel_key);
+
+            ofpbuf_clear(&ofpacts);
+            put_load(distributed_binding->tunnel_key, MFF_LOG_INPORT, 0, 15,
+                     &ofpacts);
+            put_resubmit(OFTABLE_LOG_INGRESS_PIPELINE, &ofpacts);
+
+            ofctrl_add_flow(flow_table, OFTABLE_LOCAL_OUTPUT, 120,
+                            binding->header_.uuid.parts[0],
+                            &match, &ofpacts, &binding->header_.uuid);
+        }
     }
 
     /* Handle output to multicast groups, in tables 40 and 41. */

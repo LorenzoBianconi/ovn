@@ -12918,6 +12918,11 @@ build_adm_ctrl_flows_for_lrouter(
     ovn_lflow_add(lflows, od, S_ROUTER_IN_ADMISSION, 100,
                   "vlan.present || eth.src[40]", debug_drop_action());
 
+    ovn_lflow_add(lflows, od, S_ROUTER_IN_ADMISSION, 50,
+                  "icmp4.type == 3 && icmp4.code == 4", "next;");
+    ovn_lflow_add(lflows, od, S_ROUTER_IN_ADMISSION, 50,
+                  "icmp6.type == 2 && icmp6.code == 0", "next;");
+
     /* Default action for L2 security is to drop. */
     ovn_lflow_add_default_drop(lflows, od, S_ROUTER_IN_ADMISSION);
 }
