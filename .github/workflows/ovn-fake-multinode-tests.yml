@@ -1,6 +1,7 @@
 name: System tests using ovn-fake-multinode
 
 on:
+  push:
   schedule:
     # Run everyday at midnight
     - cron: '0 0 * * *'
@@ -17,8 +18,7 @@ jobs:
     strategy:
       matrix:
         cfg:
-        - { branch: "main" }
-        - { branch: "branch-22.03" }
+        - { branch: "ovn-geneve-pmtu" }
     env:
       RUNC_CMD: podman
       OS_IMAGE: "fedora:37"
@@ -76,8 +76,7 @@ jobs:
       fail-fast: false
       matrix:
         cfg:
-        - { branch: "main" }
-        - { branch: "branch-22.03" }
+        - { branch: "ovn-geneve-pmtu" }
     name: multinode tests ${{ join(matrix.cfg.*, ' ') }}
     env:
       RUNC_CMD: podman
@@ -114,16 +113,11 @@ jobs:
 
     - uses: actions/download-artifact@v3
       with:
-        name: test-main-image
-
-    - uses: actions/download-artifact@v3
-      with:
-        name: test-branch-22.03-image
+        name: test-geneve-pmtu-image
 
     - name: Load podman image
       run: |
-        sudo podman load --input ovn_main_image.tar
-        sudo podman load --input ovn_branch-22.03_image.tar
+        sudo podman load --input ovn_geneve_pmtu_image.tar
 
     - name: Check out ovn-fake-multi-node
       uses: actions/checkout@v3
