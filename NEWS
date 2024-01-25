@@ -2,6 +2,8 @@ OVN v23.09.2 - xx xxx xxxx
 --------------------------
   - Bug fixes
   - Enable PMTU discovery on geneve/vxlan tunnels for E/W traffic.
+  - Add the capbility to mark (through pkt.mark) incoming/outgoing packets
+    in the logical switch datapath according to user configured QoS rule.
 
 OVN v23.09.1 - 01 Dec 2023
 --------------------------

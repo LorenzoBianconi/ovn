@@ -309,7 +309,7 @@ BUILD_ASSERT_DECL(
 #define SCTP_ABORT_CHUNK_FLAG_T (1 << 0)
 
 /* The number of tables for the ingress and egress pipelines. */
-#define LOG_PIPELINE_LEN 29
+#define LOG_PIPELINE_LEN 30
 
 #ifdef DDLOG
 void ddlog_warn(const char *msg);

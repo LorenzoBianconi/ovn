@@ -283,7 +283,7 @@ ACL commands:\n\
                             print ACLs for SWITCH\n\
 \n\
 QoS commands:\n\
-  qos-add SWITCH DIRECTION PRIORITY MATCH [rate=RATE [burst=BURST]] [dscp=DSCP]\n\
+  qos-add SWITCH DIRECTION PRIORITY MATCH [rate=RATE [burst=BURST]] [dscp=DSCP][mark=MARK]\n\
                             add an QoS rule to SWITCH\n\
   qos-del SWITCH [{DIRECTION | UUID} [PRIORITY MATCH]]\n\
                             remove QoS rules from SWITCH\n\
@@ -2613,6 +2613,9 @@ nbctl_qos_list(struct ctl_context *ctx)
             if (!strcmp(qos_rule->key_action[j], "dscp")) {
                 ds_put_format(&ctx->output, " dscp=%"PRId64"",
                               qos_rule->value_action[j]);
+            } else if (!strcmp(qos_rule->key_action[j], "mark")) {
+                ds_put_format(&ctx->output, " mark=%"PRId64"",
+                              qos_rule->value_action[j]);
             }
         }
         ds_put_cstr(&ctx->output, "\n");
@@ -2630,6 +2633,7 @@ nbctl_pre_qos_add(struct ctl_context *ctx)
     ovsdb_idl_add_column(ctx->idl, &nbrec_qos_col_direction);
     ovsdb_idl_add_column(ctx->idl, &nbrec_qos_col_priority);
     ovsdb_idl_add_column(ctx->idl, &nbrec_qos_col_match);
+    ovsdb_idl_add_column(ctx->idl, &nbrec_qos_col_action);
 }
 
 static void
@@ -2639,6 +2643,7 @@ nbctl_qos_add(struct ctl_context *ctx)
     const char *direction;
     int64_t priority;
     int64_t dscp = -1;
+    int64_t mark = 0;
     int64_t rate = 0;
     int64_t burst = 0;
     char *error;
@@ -2668,6 +2673,13 @@ nbctl_qos_add(struct ctl_context *ctx)
                 return;
             }
         }
+        else if (!strncmp(ctx->argv[i], "mark=", 5)) {
+            if (!ovs_scan(ctx->argv[i] + 5, "%"SCNd64, &mark) || mark < 0) {
+                ctl_error(ctx, "%s: mark must be a positive integer",
+                          ctx->argv[i] + 5);
+                return;
+            }
+        }
         else if (!strncmp(ctx->argv[i], "rate=", 5)) {
             if (!ovs_scan(ctx->argv[i] + 5, "%"SCNd64, &rate)
                 || rate < 1 || rate > UINT32_MAX) {
@@ -2685,14 +2697,15 @@ nbctl_qos_add(struct ctl_context *ctx)
             }
         } else {
             ctl_error(ctx, "%s: supported arguments are \"dscp=\", \"rate=\", "
-                      "and \"burst=\"", ctx->argv[i]);
+                      "\"burst=\" and \"mark=\"", ctx->argv[i]);
             return;
         }
     }
 
     /* Validate rate and dscp. */
-    if (-1 == dscp && !rate) {
-        ctl_error(ctx, "Either \"rate\" and/or \"dscp\" must be specified");
+    if (-1 == dscp && !rate && !mark) {
+        ctl_error(ctx, "Either \"mark\", \"rate\" and/or \"dscp\" must be "
+                       "specified");
         return;
     }
 
@@ -2701,9 +2714,11 @@ nbctl_qos_add(struct ctl_context *ctx)
     nbrec_qos_set_priority(qos, priority);
     nbrec_qos_set_direction(qos, direction);
     nbrec_qos_set_match(qos, ctx->argv[4]);
+    if (mark) {
+        nbrec_qos_update_action_setkey(qos, "mark", mark);
+    }
     if (-1 != dscp) {
-        const char *dscp_key = "dscp";
-        nbrec_qos_set_action(qos, &dscp_key, &dscp, 1);
+        nbrec_qos_update_action_setkey(qos, "dscp", dscp);
     }
     if (rate) {
         const char *bandwidth_key[2] = {"rate", "burst"};
