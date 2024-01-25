@@ -8363,6 +8363,8 @@ build_acls(struct ovn_datapath *od, const struct chassis_features *features,
     ds_destroy(&actions);
 }
 
+#define QOS_MAX_DSCP 63
+
 static void
 build_qos(struct ovn_datapath *od, struct hmap *lflows) {
     struct ds action = DS_EMPTY_INITIALIZER;
@@ -8376,11 +8378,19 @@ build_qos(struct ovn_datapath *od, struct hmap *lflows) {
         struct nbrec_qos *qos = od->nbs->qos_rules[i];
         bool ingress = !strcmp(qos->direction, "from-lport") ? true :false;
         enum ovn_stage stage = ingress ? S_SWITCH_IN_QOS_MARK : S_SWITCH_OUT_QOS_MARK;
+        static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
         int64_t rate = 0;
         int64_t burst = 0;
 
         for (size_t j = 0; j < qos->n_action; j++) {
             if (!strcmp(qos->key_action[j], "dscp")) {
+                if (qos->value_action[j] > QOS_MAX_DSCP) {
+                    VLOG_WARN_RL(&rl, "bad 'dscp' value %"PRId64" in qos "
+                                      UUID_FMT, qos->value_action[j],
+                                      UUID_ARGS(&qos->header_.uuid));
+                    continue;
+                }
+
                 ds_clear(&action);
                 ds_put_format(&action, "ip.dscp = %"PRId64"; next;",
                               qos->value_action[j]);
@@ -8388,6 +8398,15 @@ build_qos(struct ovn_datapath *od, struct hmap *lflows) {
                                         qos->priority,
                                         qos->match, ds_cstr(&action),
                                         &qos->header_);
+            } else if (!strcmp(qos->key_action[j], "mark")) {
+                ds_clear(&action);
+                ds_put_format(&action, "pkt.mark = %"PRId64"; next;",
+                              qos->value_action[j]);
+                ovn_lflow_add_with_hint(lflows, od,
+                    ingress ? S_SWITCH_IN_QOS_MARK
+                            : S_SWITCH_OUT_QOS_MARK,
+                    qos->priority, qos->match, ds_cstr(&action),
+                    &qos->header_);
             }
         }
 
