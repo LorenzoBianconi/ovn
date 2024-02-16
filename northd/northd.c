@@ -2628,12 +2628,17 @@ join_logical_ports(const struct sbrec_port_binding_table *sbrec_pb_table,
                     redirect_type && !strcasecmp(redirect_type, "bridged");
             }
 
+            const char *gw_chassis = smap_get(&op->od->nbr->options,
+                                              "chassis");
+            if (gw_chassis || op->nbrp->ha_chassis_group ||
+                op->nbrp->n_gateway_chassis) {
+                assign_routable_addresses(op);
+            }
+
             if (op->nbrp->ha_chassis_group ||
                 op->nbrp->n_gateway_chassis) {
                 /* Additional "derived" ovn_port crp represents the
                  * instance of op on the gateway chassis. */
-                const char *gw_chassis = smap_get(&op->od->nbr->options,
-                                               "chassis");
                 if (gw_chassis) {
                     static struct vlog_rate_limit rl
                         = VLOG_RATE_LIMIT_INIT(1, 1);
@@ -2668,8 +2673,6 @@ join_logical_ports(const struct sbrec_port_binding_table *sbrec_pb_table,
                                                  sizeof *od->l3dgw_ports);
                 }
                 od->l3dgw_ports[od->n_l3dgw_ports++] = op;
-
-                assign_routable_addresses(op);
             }
         }
     }
