@@ -9985,6 +9985,83 @@ build_bfd_table(
     bitmap_free(bfd_src_ports);
 }
 
+#define NEXTHOP_IDS_LEN	65535
+bool
+build_ecmp_nexthop_table(
+        struct ovsdb_idl_txn *ovnsb_txn,
+        struct hmap *routes,
+        struct simap *nexthops,
+        const struct sbrec_ecmp_nexthop_table *sbrec_ecmp_nexthop_table)
+{
+    unsigned long *nexthop_ids = bitmap_allocate(NEXTHOP_IDS_LEN);
+    bool ret = false;
+
+    if (!ovnsb_txn) {
+        return false;
+    }
+
+    const struct sbrec_ecmp_nexthop *sb_ecmp_nexthop;
+    struct simap_node *n;
+    SIMAP_FOR_EACH (n, nexthops) {
+        bitmap_set1(nexthop_ids, n->data);
+    }
+
+    struct parsed_route *pr;
+    HMAP_FOR_EACH (pr, key_node, routes) {
+        if (!pr->ecmp_symmetric_reply) {
+            continue;
+        }
+
+        const struct nbrec_logical_router_static_route *r = pr->route;
+        if (!simap_contains(nexthops, r->nexthop)) {
+            int id = bitmap_scan(nexthop_ids, 0, 1, NEXTHOP_IDS_LEN);
+            if (id == NEXTHOP_IDS_LEN) {
+                static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+                VLOG_WARN_RL(&rl, "nexthop id address space is exhausted");
+                continue;
+            }
+            bitmap_set1(nexthop_ids, id);
+            simap_put(nexthops, r->nexthop, id);
+            ret = true;
+
+            sb_ecmp_nexthop = sbrec_ecmp_nexthop_insert(ovnsb_txn);
+            sbrec_ecmp_nexthop_set_nexthop(sb_ecmp_nexthop, r->nexthop);
+            sbrec_ecmp_nexthop_set_id(sb_ecmp_nexthop, id);
+        }
+    }
+
+    SIMAP_FOR_EACH_SAFE (n, nexthops) {
+        bool stale = true;
+        HMAP_FOR_EACH (pr, key_node, routes) {
+            if (!pr->ecmp_symmetric_reply) {
+                continue;
+            }
+
+            const struct nbrec_logical_router_static_route *r = pr->route;
+            if (!strcmp(r->nexthop, n->name)) {
+                stale = false;
+                break;
+            }
+        }
+
+        if (stale) {
+            simap_delete(nexthops, n);
+        }
+    }
+
+    SBREC_ECMP_NEXTHOP_TABLE_FOR_EACH_SAFE (sb_ecmp_nexthop,
+                                            sbrec_ecmp_nexthop_table) {
+        if (!simap_contains(nexthops, sb_ecmp_nexthop->nexthop)) {
+                sbrec_ecmp_nexthop_delete(sb_ecmp_nexthop);
+                ret = true;
+        }
+    }
+
+    bitmap_free(nexthop_ids);
+
+    return ret;
+}
+
 /* Returns a string of the IP address of the router port 'op' that
  * overlaps with 'ip_s".  If one is not found, returns NULL.
  *
@@ -17746,6 +17823,12 @@ bfd_init(struct bfd_data *data)
 }
 
 void
+ecmp_nexthop_init(struct ecmp_nexthop_data *data)
+{
+    simap_init(&data->nexthops);
+}
+
+void
 northd_destroy(struct northd_data *data)
 {
     struct ovn_lb_datapaths *lb_dps;
@@ -17816,6 +17899,12 @@ bfd_destroy(struct bfd_data *data)
         bfd_erase_entry(bfd_e);
     }
     hmap_destroy(&data->bfd_connections);
+}
+
+void
+ecmp_nexthop_destroy(struct ecmp_nexthop_data *data)
+{
+    simap_destroy(&data->nexthops);
 }
 
 void
