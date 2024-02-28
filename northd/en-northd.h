@@ -34,5 +34,9 @@ void *en_bfd_init(struct engine_node *node OVS_UNUSED,
 void en_bfd_cleanup(void *data);
 bool bfd_change_handler(struct engine_node *node, void *data);
 void en_bfd_run(struct engine_node *node, void *data);
+void en_ecmp_nexthop_run(struct engine_node *node, void *data);
+void *en_ecmp_nexthop_init(struct engine_node *node OVS_UNUSED,
+                           struct engine_arg *arg OVS_UNUSED);
+void en_ecmp_nexthop_cleanup(void *data);
 
 #endif /* EN_NORTHD_H */
