@@ -10039,6 +10039,105 @@ build_bfd_table(
     return ret;
 }
 
+struct ecmp_nexthop_entry {
+    struct hmap_node hmap_node;
+
+    char *nexthop;
+    int id;
+    bool stale;
+};
+
+static struct ecmp_nexthop_entry *
+ecmp_nexthop_lookup(const struct hmap *map, const char *nexthop, size_t hash)
+{
+    struct ecmp_nexthop_entry *e;
+
+    HMAP_FOR_EACH_WITH_HASH (e, hmap_node, hash, map) {
+        if (!strcmp(e->nexthop, nexthop)) {
+            return e;
+        }
+    }
+    return NULL;
+}
+
+#define NEXTHOP_IDS_LEN	65535
+bool
+build_ecmp_nexthop_table(
+        struct ovsdb_idl_txn *ovnsb_txn,
+        struct hmap *routes,
+        struct hmap *nexthops,
+        const struct sbrec_ecmp_nexthop_table *sbrec_ecmp_nexthop_table)
+{
+    unsigned long *nexthop_ids = bitmap_allocate(NEXTHOP_IDS_LEN);
+    bool ret = false;
+
+    if (!ovnsb_txn) {
+        return false;
+    }
+
+    struct ecmp_nexthop_entry *e;
+    HMAP_FOR_EACH (e, hmap_node, nexthops) {
+        bitmap_set1(nexthop_ids, e->id);
+        e->stale = true;
+    }
+
+    struct parsed_route *pr;
+    HMAP_FOR_EACH (pr, key_node, routes) {
+        if (!pr->ecmp_symmetric_reply) {
+            continue;
+        }
+
+        const struct nbrec_logical_router_static_route *r = pr->route;
+        size_t hash = hash_string(r->nexthop, 0);
+        e = ecmp_nexthop_lookup(nexthops, r->nexthop, hash);
+        if (!e) {
+            int id = bitmap_scan(nexthop_ids, 0, 1, NEXTHOP_IDS_LEN);
+            if (id == NEXTHOP_IDS_LEN) {
+                static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+                VLOG_WARN_RL(&rl, "nexthop id address space is exhausted");
+                continue;
+            }
+            bitmap_set1(nexthop_ids, id);
+            ret = true;
+
+            e = xzalloc(sizeof *e);
+            e->nexthop = xstrdup(r->nexthop);
+            e->id = id;
+            hmap_insert(nexthops, &e->hmap_node, hash);
+
+            const struct sbrec_ecmp_nexthop *sb_ecmp_nexthop
+                = sbrec_ecmp_nexthop_insert(ovnsb_txn);
+            sbrec_ecmp_nexthop_set_nexthop(sb_ecmp_nexthop, e->nexthop);
+            sbrec_ecmp_nexthop_set_id(sb_ecmp_nexthop, id);
+        } else {
+            e->stale = false;
+        }
+    }
+
+    HMAP_FOR_EACH_SAFE (e, hmap_node, nexthops) {
+        if (!e->stale) {
+            continue;
+        }
+
+        const struct sbrec_ecmp_nexthop *sb_ecmp_nexthop;
+        SBREC_ECMP_NEXTHOP_TABLE_FOR_EACH (sb_ecmp_nexthop,
+                                           sbrec_ecmp_nexthop_table) {
+            if (!strcmp(sb_ecmp_nexthop->nexthop, e->nexthop)) {
+                ret = true;
+                sbrec_ecmp_nexthop_delete(sb_ecmp_nexthop);
+                hmap_remove(nexthops, &e->hmap_node);
+                free(e->nexthop);
+                free(e);
+                break;
+            }
+        }
+    }
+
+    bitmap_free(nexthop_ids);
+
+    return ret;
+}
+
 /* Returns a string of the IP address of the router port 'op' that
  * overlaps with 'ip_s".  If one is not found, returns NULL.
  *
@@ -17816,6 +17915,12 @@ bfd_init(struct bfd_data *data)
 }
 
 void
+ecmp_nexthop_init(struct ecmp_nexthop_data *data)
+{
+    hmap_init(&data->nexthops);
+}
+
+void
 northd_destroy(struct northd_data *data)
 {
     struct ovn_lb_datapaths *lb_dps;
@@ -17886,6 +17991,18 @@ bfd_destroy(struct bfd_data *data)
         bfd_erase_entry(bfd_e);
     }
     hmap_destroy(&data->bfd_connections);
+}
+
+void
+ecmp_nexthop_destroy(struct ecmp_nexthop_data *data)
+{
+    struct ecmp_nexthop_entry *e;
+
+    HMAP_FOR_EACH_POP (e, hmap_node, &data->nexthops) {
+        free(e->nexthop);
+        free(e);
+    }
+    hmap_destroy(&data->nexthops);
 }
 
 void
