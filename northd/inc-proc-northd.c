@@ -279,6 +279,7 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_lflow, &en_bfd, NULL);
     engine_add_input(&en_lflow, &en_route_policies, NULL);
     engine_add_input(&en_lflow, &en_static_routes, NULL);
+    engine_add_input(&en_lflow, &en_ecmp_nexthop, NULL);
     engine_add_input(&en_lflow, &en_global_config,
                      node_global_config_handler);
     engine_add_input(&en_lflow, &en_northd, lflow_northd_handler);
