@@ -216,6 +216,7 @@ struct lflow_input {
     struct hmap *parsed_routes;
     struct hmap *route_policies;
     struct simap *route_tables;
+    struct hmap *nexthops_table;
 };
 
 extern int parallelization_state;
