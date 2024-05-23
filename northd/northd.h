@@ -181,11 +181,7 @@ struct bfd_data {
 struct lr_nat_table;
 
 struct lflow_input {
-    /* Northbound table references */
-    const struct nbrec_bfd_table *nbrec_bfd_table;
-
     /* Southbound table references */
-    const struct sbrec_bfd_table *sbrec_bfd_table;
     const struct sbrec_logical_flow_table *sbrec_logical_flow_table;
     const struct sbrec_multicast_group_table *sbrec_multicast_group_table;
     const struct sbrec_igmp_group_table *sbrec_igmp_group_table;

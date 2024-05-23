@@ -53,10 +53,6 @@ lflow_get_input_data(struct engine_node *node,
     struct ed_type_ls_stateful *ls_stateful_data =
         engine_get_input_data("ls_stateful", node);
 
-    lflow_input->nbrec_bfd_table =
-        EN_OVSDB_GET(engine_get_input("NB_bfd", node));
-    lflow_input->sbrec_bfd_table =
-        EN_OVSDB_GET(engine_get_input("SB_bfd", node));
     lflow_input->sbrec_logical_flow_table =
         EN_OVSDB_GET(engine_get_input("SB_logical_flow", node));
     lflow_input->sbrec_multicast_group_table =

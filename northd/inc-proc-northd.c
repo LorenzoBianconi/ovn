@@ -258,10 +258,8 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_sync_meters, &en_nb_meter, NULL);
     engine_add_input(&en_sync_meters, &en_sb_meter, NULL);
 
-    engine_add_input(&en_lflow, &en_nb_bfd, NULL);
     engine_add_input(&en_lflow, &en_nb_acl, NULL);
     engine_add_input(&en_lflow, &en_sync_meters, NULL);
-    engine_add_input(&en_lflow, &en_sb_bfd, NULL);
     engine_add_input(&en_lflow, &en_sb_logical_flow, NULL);
     engine_add_input(&en_lflow, &en_sb_multicast_group, NULL);
     engine_add_input(&en_lflow, &en_sb_igmp_group, NULL);
