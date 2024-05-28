@@ -166,6 +166,7 @@ struct route_policy {
     const struct nbrec_logical_router_policy *rule;
     size_t n_valid_nexthops;
     char **valid_nexthops;
+    struct ovn_datapath *od;
     bool stale;
 };
 
@@ -689,6 +690,7 @@ struct parsed_route {
     const struct nbrec_logical_router_static_route *route;
     bool ecmp_symmetric_reply;
     bool is_discard_route;
+    struct ovn_datapath *od;
     bool stale;
 };
 

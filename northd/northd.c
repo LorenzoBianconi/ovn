@@ -10459,6 +10459,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
                             !strcmp(route->policy, "src-ip"));
     new_pr->hash = route_hash(new_pr);
     new_pr->route = route;
+    new_pr->od = od;
     new_pr->ecmp_symmetric_reply = smap_get_bool(&route->options,
                                                  "ecmp_symmetric_reply",
                                                  false);
@@ -10484,7 +10485,9 @@ build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
     bool ret = false;
     struct parsed_route *pr;
     HMAP_FOR_EACH (pr, key_node, routes) {
-        pr->stale = true;
+        if (pr->od == od) {
+            pr->stale = true;
+        }
     }
 
     for (int i = 0; i < od->nbr->n_static_routes; i++) {
@@ -12989,7 +12992,9 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
     bool ret = false;
 
     HMAP_FOR_EACH (rp, key_node, route_policies) {
-        rp->stale = true;
+        if (rp->od == od) {
+            rp->stale = true;
+        }
     }
 
     for (int i = 0; i < od->nbr->n_policies; i++) {
@@ -13025,6 +13030,7 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
         new_rp->rule = rule;
         new_rp->n_valid_nexthops = n_valid_nexthops;
         new_rp->valid_nexthops = valid_nexthops;
+        new_rp->od = od;
 
         size_t hash = uuid_hash(&od->key);
         rp = route_policies_lookup(route_policies, hash, new_rp);

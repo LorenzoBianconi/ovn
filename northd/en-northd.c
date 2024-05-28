@@ -247,9 +247,6 @@ en_bfd_consumer_run(struct engine_node *node, void *data)
     struct bfd_consumer_data *bfd_consumer_data = data;
     enum engine_node_state state = EN_UNCHANGED;
 
-    bfd_consumer_destroy(data);
-    bfd_consumer_init(data);
-
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
         for (int i = 0; i < od->nbr->n_ports; i++) {
