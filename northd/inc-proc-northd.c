@@ -248,7 +248,7 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_bfd, &en_nb_logical_router_static_route, NULL);
 
     engine_add_input(&en_bfd_consumer, &en_bfd, NULL);
-    engine_add_input(&en_bfd_consumer, &en_northd, engine_noop_handler);
+    engine_add_input(&en_bfd_consumer, &en_northd, NULL);
     engine_add_input(&en_bfd_consumer, &en_nb_bfd, NULL);
     engine_add_input(&en_bfd_consumer, &en_nb_logical_router_policy, NULL);
     engine_add_input(&en_bfd_consumer, &en_nb_logical_router_static_route,
