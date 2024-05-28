@@ -10481,7 +10481,11 @@ build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
                     struct hmap *routes, struct simap *route_tables,
                     const struct hmap *bfd_connections)
 {
-    bool ret = true;
+    bool ret = false;
+    struct parsed_route *pr;
+    HMAP_FOR_EACH (pr, key_node, routes) {
+        pr->stale = true;
+    }
 
     for (int i = 0; i < od->nbr->n_static_routes; i++) {
         if (parsed_routes_add(od, lr_ports, routes, route_tables,
@@ -10489,6 +10493,16 @@ build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
                               bfd_connections)) {
             ret = true;
         }
+    }
+
+    HMAP_FOR_EACH_SAFE (pr, key_node, routes) {
+        if (!pr->stale) {
+            continue;
+        }
+
+        ret = true;
+        hmap_remove(routes, &pr->key_node);
+        free(pr);
     }
 
     return ret;
@@ -12974,6 +12988,10 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
     struct route_policy *rp;
     bool ret = false;
 
+    HMAP_FOR_EACH (rp, key_node, route_policies) {
+        rp->stale = true;
+    }
+
     for (int i = 0; i < od->nbr->n_policies; i++) {
         const struct nbrec_logical_router_policy *rule = od->nbr->policies[i];
         size_t n_valid_nexthops = 0;
@@ -13018,6 +13036,17 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
             free(valid_nexthops);
             free(new_rp);
         }
+    }
+
+    HMAP_FOR_EACH_SAFE (rp, key_node, route_policies) {
+        if (!rp->stale) {
+            continue;
+        }
+
+        ret = true;
+        hmap_remove(route_policies, &rp->key_node);
+        free(rp->valid_nexthops);
+        free(rp);
     }
 
     return ret;
