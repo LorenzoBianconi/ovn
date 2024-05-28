@@ -10330,7 +10330,8 @@ find_static_route_outport(struct ovn_datapath *od, const struct hmap *lr_ports,
  * Otherwise return NULL. */
 
 static struct parsed_route *
-route_lookup(struct hmap *routes, size_t hash, struct parsed_route *new_pr)
+parsed_route_lookup(struct hmap *routes, size_t hash,
+                    struct parsed_route *new_pr)
 {
     struct parsed_route *pr;
     HMAP_FOR_EACH_WITH_HASH (pr, key_node, hash, routes) {
@@ -10464,7 +10465,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
     new_pr->is_discard_route = is_discard_route;
 
     size_t hash = uuid_hash(&od->key);
-    struct parsed_route *pr = route_lookup(routes, hash, new_pr);
+    struct parsed_route *pr = parsed_route_lookup(routes, hash, new_pr);
     if (!pr) {
         hmap_insert(routes, &new_pr->key_node, hash);
         return true;
@@ -12928,11 +12929,50 @@ build_mcast_lookup_flows_for_lrouter(
     }
 }
 
+static struct route_policy *
+route_policies_lookup(struct hmap *route_policies, size_t hash,
+                      struct route_policy *new_rp)
+{
+    struct route_policy *rp;
+    HMAP_FOR_EACH_WITH_HASH (rp, key_node, hash, route_policies) {
+        if (rp->rule != new_rp->rule) {
+            continue;
+        }
+
+        if (rp->n_valid_nexthops != new_rp->n_valid_nexthops) {
+            continue;
+        }
+
+        size_t i;
+        for (i = 0; i < new_rp->n_valid_nexthops; i++) {
+            size_t j;
+
+            for (j = 0; j < rp->n_valid_nexthops; j++) {
+                if (!strcmp(new_rp->valid_nexthops[i],
+                            rp->valid_nexthops[j])) {
+                    break;
+                }
+            }
+
+            if (j == rp->n_valid_nexthops) {
+                break;
+            }
+        }
+
+        if (i == new_rp->n_valid_nexthops) {
+            return rp;
+        }
+    }
+
+    return NULL;
+}
+
 bool
 build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
                      struct hmap *bfd_connections, struct hmap *route_policies)
 {
-    //bool ret = false;
+    struct route_policy *rp;
+    bool ret = false;
 
     for (int i = 0; i < od->nbr->n_policies; i++) {
         const struct nbrec_logical_router_policy *rule = od->nbr->policies[i];
@@ -12963,14 +13003,24 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
             }
         }
 
-        struct route_policy *rp = xzalloc(sizeof *rp);
-        rp->rule = rule;
-        rp->n_valid_nexthops = n_valid_nexthops;
-        rp->valid_nexthops = valid_nexthops;
-        hmap_insert(route_policies, &rp->key_node, uuid_hash(&od->key));
+        struct route_policy *new_rp = xzalloc(sizeof *new_rp);
+        new_rp->rule = rule;
+        new_rp->n_valid_nexthops = n_valid_nexthops;
+        new_rp->valid_nexthops = valid_nexthops;
+
+        size_t hash = uuid_hash(&od->key);
+        rp = route_policies_lookup(route_policies, hash, new_rp);
+        if (!rp) {
+            hmap_insert(route_policies, &new_rp->key_node, hash);
+            ret = true;
+        } else {
+            rp->stale = false;
+            free(valid_nexthops);
+            free(new_rp);
+        }
     }
 
-    return true;
+    return ret;
 }
 
 /* Logical router ingress table POLICY: Policy.
