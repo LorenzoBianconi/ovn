@@ -166,6 +166,7 @@ struct route_policy {
     const struct nbrec_logical_router_policy *rule;
     size_t n_valid_nexthops;
     char **valid_nexthops;
+    bool stale;
 };
 
 struct bfd_consumer_data {
@@ -688,6 +689,7 @@ struct parsed_route {
     const struct nbrec_logical_router_static_route *route;
     bool ecmp_symmetric_reply;
     bool is_discard_route;
+    bool stale;
 };
 
 void ovnnb_db_run(struct northd_input *input_data,
@@ -711,10 +713,9 @@ void northd_init(struct northd_data *data);
 void northd_indices_create(struct northd_data *data,
                            struct ovsdb_idl *ovnsb_idl);
 
-struct parsed_route *parsed_routes_add(struct ovn_datapath *,
-        const struct hmap *, struct hmap *, struct simap *,
-        const struct nbrec_logical_router_static_route *,
-        const struct hmap *);
+bool build_parsed_routes(struct ovn_datapath *, const struct hmap *,
+                         struct hmap *, struct simap *,
+                         const struct hmap *);
 uint32_t get_route_table_id(struct simap *, const char *);
 void bfd_consumer_init(struct bfd_consumer_data *);
 void bfd_consumer_destroy(struct bfd_consumer_data *);
@@ -759,14 +760,14 @@ bool northd_handle_lb_data_changes(struct tracked_lb_data *,
                                    struct hmap *lbgrp_datapaths_map,
                                    struct northd_tracked_data *);
 
-void build_route_policies(struct ovn_datapath *, struct hmap *, struct hmap *,
+bool build_route_policies(struct ovn_datapath *, struct hmap *, struct hmap *,
                           struct hmap *);
 bool build_bfd_table(struct ovsdb_idl_txn *ovnsb_txn,
                      const struct nbrec_bfd_table *,
                      const struct sbrec_bfd_table *,
                      const struct hmap *lr_ports,
                      struct hmap *bfd_connections);
-void bfd_cleanup_connections(const struct nbrec_bfd_table *,
+bool bfd_cleanup_connections(const struct nbrec_bfd_table *,
                              struct hmap *bfd_map);
 void run_update_worker_pool(int n_threads);
 

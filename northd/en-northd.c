@@ -245,6 +245,7 @@ en_bfd_consumer_run(struct engine_node *node, void *data)
     const struct nbrec_bfd_table *nbrec_bfd_table =
         EN_OVSDB_GET(engine_get_input("NB_bfd", node));
     struct bfd_consumer_data *bfd_consumer_data = data;
+    enum engine_node_state state = EN_UNCHANGED;
 
     bfd_consumer_destroy(data);
     bfd_consumer_init(data);
@@ -257,20 +258,27 @@ en_bfd_consumer_run(struct engine_node *node, void *data)
             get_route_table_id(&bfd_consumer_data->route_tables,
                                route_table_name);
         }
-        for (int i = 0; i < od->nbr->n_static_routes; i++) {
-                parsed_routes_add(od, &northd_data->lr_ports,
-                                  &bfd_consumer_data->parsed_routes,
-                                  &bfd_consumer_data->route_tables,
-                                  od->nbr->static_routes[i],
-                                  &bfd_data->bfd_connections);
-        }
-        build_route_policies(od, &northd_data->lr_ports,
-                             &bfd_data->bfd_connections,
-                             &bfd_consumer_data->route_policies);
-    }
-    bfd_cleanup_connections(nbrec_bfd_table, &bfd_data->bfd_connections);
 
-    engine_set_node_state(node, EN_UPDATED);
+        if (build_parsed_routes(od, &northd_data->lr_ports,
+                                &bfd_consumer_data->parsed_routes,
+                                &bfd_consumer_data->route_tables,
+                                &bfd_data->bfd_connections)) {
+            state = EN_UPDATED;
+        }
+
+        if (build_route_policies(od, &northd_data->lr_ports,
+                                 &bfd_data->bfd_connections,
+                                 &bfd_consumer_data->route_policies)) {
+            state = EN_UPDATED;
+        }
+    }
+
+    if (bfd_cleanup_connections(nbrec_bfd_table,
+                                &bfd_data->bfd_connections)) {
+        state = EN_UPDATED;
+    }
+
+    engine_set_node_state(node, state);
 }
 
 void
