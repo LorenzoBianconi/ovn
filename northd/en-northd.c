@@ -261,6 +261,9 @@ en_route_policies_run(struct engine_node *node, void *data)
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     struct route_policies_data *route_policies_data = data;
 
+    route_policies_destroy(data);
+    route_policies_init(data);
+
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
         build_route_policies(od, &northd_data->lr_ports,
@@ -303,6 +306,9 @@ en_static_routes_run(struct engine_node *node, void *data)
 
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     struct static_routes_data *static_routes_data = data;
+
+    static_routes_destroy(data);
+    static_routes_init(data);
 
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
