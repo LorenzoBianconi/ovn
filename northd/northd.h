@@ -759,7 +759,7 @@ bool northd_handle_lb_data_changes(struct tracked_lb_data *,
                                    struct northd_tracked_data *);
 
 void build_route_policies(struct ovn_datapath *, struct hmap *, struct hmap *);
-bool build_bfd_table(struct ovsdb_idl_txn *ovnsb_txn,
+void build_bfd_table(struct ovsdb_idl_txn *ovnsb_txn,
                      const struct nbrec_bfd_table *,
                      const struct sbrec_bfd_table *,
                      const struct nbrec_logical_router_static_route_table *,

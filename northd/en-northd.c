@@ -336,33 +336,23 @@ en_static_routes_run(struct engine_node *node, void *data)
 }
 
 bool
-bfd_northd_change_handler(struct engine_node *node, void *data)
+bfd_northd_change_handler(struct engine_node *node,
+                          void *data OVS_UNUSED)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    struct bfd_data *bfd_data = data;
-    const struct engine_context *eng_ctx = engine_get_context();
-    const struct nbrec_bfd_table *nbrec_bfd_table =
-        EN_OVSDB_GET(engine_get_input("NB_bfd", node));
-    const struct sbrec_bfd_table *sbrec_bfd_table =
-        EN_OVSDB_GET(engine_get_input("SB_bfd", node));
-    struct engine_node *nb_lr_sr_node =
-        engine_get_input("NB_logical_router_static_route", node);
-    const struct nbrec_logical_router_static_route_table *
-        nbrec_static_route_table = EN_OVSDB_GET(nb_lr_sr_node);
-    struct engine_node *nb_lr_policy_node =
-        engine_get_input("NB_logical_router_policy", node);
-    const struct nbrec_logical_router_policy_table *
-        nbrec_router_policy_table = EN_OVSDB_GET(nb_lr_policy_node);
-
-    if (build_bfd_table(eng_ctx->ovnsb_idl_txn,
-                        nbrec_bfd_table, sbrec_bfd_table,
-                        nbrec_static_route_table, nbrec_router_policy_table,
-                        &northd_data->lr_ports, &bfd_data->bfd_connections)) {
-        engine_set_node_state(node, EN_UPDATED);
-    } else {
-        engine_set_node_state(node, EN_UNCHANGED);
+    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+        return false;
     }
 
+    /* This node uses the below data from the en_northd engine node.
+     * See (lr_stateful_get_input_data())
+     *   1. northd_data->lr_datapaths
+     *      This data gets updated when a logical router is created or deleted.
+     *      northd engine node presently falls back to full recompute when
+     *      this happens and so does this node.
+     *      Note: When we add I-P to the created/deleted logical routers, we
+     *      need to revisit this handler.
+     */
     return true;
 }
 

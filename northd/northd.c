@@ -9778,47 +9778,37 @@ bfd_port_lookup(const struct hmap *bfd_map, const char *logical_port,
 #define BFD_DEF_MINRX       1000 /* 1s */
 #define BFD_DEF_DETECT_MULT 5
 
-static bool
+static void
 build_bfd_update_sb_conf(const struct nbrec_bfd *nb_bt,
                          const struct sbrec_bfd *sb_bt)
 {
-    bool ret = false;
-
     if (strcmp(nb_bt->dst_ip, sb_bt->dst_ip)) {
         sbrec_bfd_set_dst_ip(sb_bt, nb_bt->dst_ip);
-        ret = true;
     }
 
     if (strcmp(nb_bt->logical_port, sb_bt->logical_port)) {
         sbrec_bfd_set_logical_port(sb_bt, nb_bt->logical_port);
-        ret = true;
     }
 
     if (strcmp(nb_bt->status, sb_bt->status)) {
         sbrec_bfd_set_status(sb_bt, nb_bt->status);
-        ret = true;
     }
 
     int detect_mult = nb_bt->n_detect_mult ? nb_bt->detect_mult[0]
                                            : BFD_DEF_DETECT_MULT;
     if (detect_mult != sb_bt->detect_mult) {
         sbrec_bfd_set_detect_mult(sb_bt, detect_mult);
-        ret = true;
     }
 
     int min_tx = nb_bt->n_min_tx ? nb_bt->min_tx[0] : BFD_DEF_MINTX;
     if (min_tx != sb_bt->min_tx) {
         sbrec_bfd_set_min_tx(sb_bt, min_tx);
-        ret = true;
     }
 
     int min_rx = nb_bt->n_min_rx ? nb_bt->min_rx[0] : BFD_DEF_MINRX;
     if (min_rx != sb_bt->min_rx) {
         sbrec_bfd_set_min_rx(sb_bt, min_rx);
-        ret = true;
     }
-
-    return ret;
 }
 
 /* RFC 5881 section 4
@@ -9872,7 +9862,7 @@ bfd_lookup_consumer(
     return false;
 }
 
-bool
+void
 build_bfd_table(
     struct ovsdb_idl_txn *ovnsb_txn,
     const struct nbrec_bfd_table *nbrec_bfd_table,
@@ -9882,12 +9872,11 @@ build_bfd_table(
     const struct hmap *lr_ports, struct hmap *bfd_connections)
 {
     if (!ovnsb_txn) {
-        return false;
+        return;
     }
 
     unsigned long *bfd_src_ports = bitmap_allocate(BFD_UDP_SRC_PORT_LEN);
     struct bfd_entry *bfd_e;
-    bool ret = false;
 
     /* align bfd map to sb db */
     const struct sbrec_bfd *sb_bt;
@@ -9946,7 +9935,6 @@ build_bfd_table(
             bfd_e = bfd_alloc_entry(bfd_connections, nb_bt->logical_port,
                                     nb_bt->dst_ip);
             bfd_e->sb_bt = sb_bt;
-            ret = true;
         } else {
             bfd_e->stale = false;
 
@@ -9957,7 +9945,6 @@ build_bfd_table(
                  */
                 nbrec_bfd_set_status(nb_bt, "admin_down");
                 sbrec_bfd_set_status(bfd_e->sb_bt, "admin_down");
-                ret = true;
             } else if (strcmp(bfd_e->sb_bt->status, nb_bt->status)) {
                 if (!strcmp(nb_bt->status, "admin_down") ||
                     !strcmp(bfd_e->sb_bt->status, "admin_down")) {
@@ -9965,15 +9952,13 @@ build_bfd_table(
                 } else {
                     nbrec_bfd_set_status(nb_bt, bfd_e->sb_bt->status);
                 }
-                ret = true;
             }
 
-            ret |= build_bfd_update_sb_conf(nb_bt, bfd_e->sb_bt);
+            build_bfd_update_sb_conf(nb_bt, bfd_e->sb_bt);
             if (op->sb->chassis &&
                 !strcmp(op->sb->chassis->name, bfd_e->sb_bt->chassis_name)) {
                 sbrec_bfd_set_chassis_name(bfd_e->sb_bt,
                                            op->sb->chassis->name);
-                ret = true;
             }
         }
 
@@ -9992,15 +9977,12 @@ build_bfd_table(
             op->has_bfd = false;
         }
 
-        ret = true;
         hmap_remove(bfd_connections, &bfd_e->hmap_node);
         sbrec_bfd_delete(bfd_e->sb_bt);
         bfd_erase_entry(bfd_e);
     }
 
     bitmap_free(bfd_src_ports);
-
-    return ret;
 }
 
 /* Returns a string of the IP address of the router port 'op' that

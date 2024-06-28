@@ -34,7 +34,8 @@ void en_static_routes_run(struct engine_node *node, void *data);
 void *en_bfd_init(struct engine_node *node OVS_UNUSED,
                   struct engine_arg *arg OVS_UNUSED);
 void en_bfd_cleanup(void *data);
-bool bfd_northd_change_handler(struct engine_node *node, void *data);
+bool bfd_northd_change_handler(struct engine_node *node,
+                               void *data OVS_UNUSED);
 void en_bfd_run(struct engine_node *node, void *data);
 
 #endif /* EN_NORTHD_H */
