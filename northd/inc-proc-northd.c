@@ -246,20 +246,20 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_bfd, &en_nb_logical_router_policy, NULL);
     engine_add_input(&en_bfd, &en_nb_logical_router_static_route, NULL);
     engine_add_input(&en_bfd, &en_sb_bfd, NULL);
-    engine_add_input(&en_bfd, &en_northd, bfd_change_handler);
+    engine_add_input(&en_bfd, &en_northd, bfd_northd_change_handler);
 
     engine_add_input(&en_route_policies, &en_bfd, NULL);
     engine_add_input(&en_route_policies, &en_nb_bfd, NULL);
     engine_add_input(&en_route_policies, &en_nb_logical_router_policy, NULL);
     engine_add_input(&en_route_policies, &en_northd,
-                     route_policies_change_handler);
+                     route_policies_northd_change_handler);
 
     engine_add_input(&en_static_routes, &en_bfd, NULL);
-    engine_add_input(&en_static_routes, &en_northd,
-                     static_routes_change_handler);
     engine_add_input(&en_static_routes, &en_nb_bfd, NULL);
     engine_add_input(&en_static_routes,
                      &en_nb_logical_router_static_route, NULL);
+    engine_add_input(&en_static_routes, &en_northd,
+                     static_routes_northd_change_handler);
 
     engine_add_input(&en_sync_meters, &en_nb_acl, NULL);
     engine_add_input(&en_sync_meters, &en_nb_meter, NULL);
@@ -271,11 +271,11 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_lflow, &en_sb_multicast_group, NULL);
     engine_add_input(&en_lflow, &en_sb_igmp_group, NULL);
     engine_add_input(&en_lflow, &en_sb_logical_dp_group, NULL);
-    engine_add_input(&en_lflow, &en_global_config,
-                     node_global_config_handler);
+    engine_add_input(&en_lflow, &en_bfd, NULL);
     engine_add_input(&en_lflow, &en_route_policies, NULL);
     engine_add_input(&en_lflow, &en_static_routes, NULL);
-    engine_add_input(&en_lflow, &en_bfd, NULL);
+    engine_add_input(&en_lflow, &en_global_config,
+                     node_global_config_handler);
     engine_add_input(&en_lflow, &en_northd, lflow_northd_handler);
     engine_add_input(&en_lflow, &en_port_group, lflow_port_group_handler);
     engine_add_input(&en_lflow, &en_lr_stateful, lflow_lr_stateful_handler);

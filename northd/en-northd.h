@@ -22,17 +22,17 @@ bool northd_lb_data_handler(struct engine_node *, void *data);
 void *en_static_routes_init(struct engine_node *node OVS_UNUSED,
                             struct engine_arg *arg OVS_UNUSED);
 void en_route_policies_cleanup(void *data);
-bool route_policies_change_handler(struct engine_node *node, void *data);
+bool route_policies_northd_change_handler(struct engine_node *node, void *data);
 void en_route_policies_run(struct engine_node *node, void *data);
 void *en_route_policies_init(struct engine_node *node OVS_UNUSED,
                              struct engine_arg *arg OVS_UNUSED);
 void en_static_routes_cleanup(void *data);
-bool static_routes_change_handler(struct engine_node *node, void *data);
+bool static_routes_northd_change_handler(struct engine_node *node, void *data);
 void en_static_routes_run(struct engine_node *node, void *data);
 void *en_bfd_init(struct engine_node *node OVS_UNUSED,
                   struct engine_arg *arg OVS_UNUSED);
 void en_bfd_cleanup(void *data);
-bool bfd_change_handler(struct engine_node *node, void *data);
+bool bfd_northd_change_handler(struct engine_node *node, void *data);
 void en_bfd_run(struct engine_node *node, void *data);
 
 #endif /* EN_NORTHD_H */

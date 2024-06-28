@@ -237,7 +237,7 @@ northd_global_config_handler(struct engine_node *node, void *data OVS_UNUSED)
 }
 
 bool
-route_policies_change_handler(struct engine_node *node, void *data)
+route_policies_northd_change_handler(struct engine_node *node, void *data)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     struct route_policies_data *route_policies_data = data;
@@ -274,7 +274,7 @@ en_route_policies_run(struct engine_node *node, void *data)
 }
 
 bool
-static_routes_change_handler(struct engine_node *node, void *data)
+static_routes_northd_change_handler(struct engine_node *node, void *data)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     struct static_routes_data *static_routes_data = data;
@@ -282,7 +282,7 @@ static_routes_change_handler(struct engine_node *node, void *data)
 
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
-        for (int i = 0; i < od->nbr->n_ports; i++) {
+        for (size_t i = 0; i < od->nbr->n_ports; i++) {
             const char *route_table_name =
                 smap_get(&od->nbr->ports[i]->options, "route_table");
             get_route_table_id(&static_routes_data->route_tables,
@@ -328,7 +328,7 @@ en_static_routes_run(struct engine_node *node, void *data)
 }
 
 bool
-bfd_change_handler(struct engine_node *node, void *data)
+bfd_northd_change_handler(struct engine_node *node, void *data)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     struct bfd_data *bfd_data = data;
