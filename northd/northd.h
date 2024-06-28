@@ -712,7 +712,7 @@ void northd_indices_create(struct northd_data *data,
 
 void route_policies_init(struct route_policies_data *);
 void route_policies_destroy(struct route_policies_data *);
-bool build_parsed_routes(struct ovn_datapath *, const struct hmap *,
+void build_parsed_routes(struct ovn_datapath *, const struct hmap *,
                          struct hmap *, struct simap *);
 uint32_t get_route_table_id(struct simap *, const char *);
 void static_routes_init(struct static_routes_data *);
@@ -758,7 +758,7 @@ bool northd_handle_lb_data_changes(struct tracked_lb_data *,
                                    struct hmap *lbgrp_datapaths_map,
                                    struct northd_tracked_data *);
 
-bool build_route_policies(struct ovn_datapath *, struct hmap *, struct hmap *);
+void build_route_policies(struct ovn_datapath *, struct hmap *, struct hmap *);
 bool build_bfd_table(struct ovsdb_idl_txn *ovnsb_txn,
                      const struct nbrec_bfd_table *,
                      const struct sbrec_bfd_table *,

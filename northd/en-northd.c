@@ -237,21 +237,29 @@ northd_global_config_handler(struct engine_node *node, void *data OVS_UNUSED)
 }
 
 bool
-route_policies_northd_change_handler(struct engine_node *node, void *data)
+route_policies_northd_change_handler(struct engine_node *node,
+                                     void *data OVS_UNUSED)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    struct route_policies_data *route_policies_data = data;
-    enum engine_node_state state = EN_UNCHANGED;
-
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
-        if (build_route_policies(od, &northd_data->lr_ports,
-                                 &route_policies_data->route_policies)) {
-            state = EN_UPDATED;
-        }
+    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+        return false;
     }
-    engine_set_node_state(node, state);
 
+    /* This node uses the below data from the en_northd engine node.
+     * See (lr_stateful_get_input_data())
+     *   1. northd_data->lr_datapaths
+     *      This data gets updated when a logical router is created or deleted.
+     *      northd engine node presently falls back to full recompute when
+     *      this happens and so does this node.
+     *      Note: When we add I-P to the created/deleted logical routers, we
+     *      need to revisit this handler.
+     *
+     *      This node also accesses the route policies of the logical router.
+     *      When these route policies get updated, en_northd engine recomputes
+     *      and so does this node.
+     *      Note: When we add I-P to handle route policies changes, we need
+     *      to revisit this handler.
+     */
     return true;
 }
 
@@ -274,29 +282,29 @@ en_route_policies_run(struct engine_node *node, void *data)
 }
 
 bool
-static_routes_northd_change_handler(struct engine_node *node, void *data)
+static_routes_northd_change_handler(struct engine_node *node,
+                                    void *data OVS_UNUSED)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    struct static_routes_data *static_routes_data = data;
-    enum engine_node_state state = EN_UNCHANGED;
-
-    struct ovn_datapath *od;
-    HMAP_FOR_EACH (od, key_node, &northd_data->lr_datapaths.datapaths) {
-        for (size_t i = 0; i < od->nbr->n_ports; i++) {
-            const char *route_table_name =
-                smap_get(&od->nbr->ports[i]->options, "route_table");
-            get_route_table_id(&static_routes_data->route_tables,
-                               route_table_name);
-        }
-
-        if (build_parsed_routes(od, &northd_data->lr_ports,
-                                &static_routes_data->parsed_routes,
-                                &static_routes_data->route_tables)) {
-            state = EN_UPDATED;
-        }
+    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+        return false;
     }
-    engine_set_node_state(node, state);
 
+    /* This node uses the below data from the en_northd engine node.
+     * See (lr_stateful_get_input_data())
+     *   1. northd_data->lr_datapaths
+     *      This data gets updated when a logical router is created or deleted.
+     *      northd engine node presently falls back to full recompute when
+     *      this happens and so does this node.
+     *      Note: When we add I-P to the created/deleted logical routers, we
+     *      need to revisit this handler.
+     *
+     *      This node also accesses the static routes of the logical router.
+     *      When these static routes gets updated, en_northd engine recomputes
+     *      and so does this node.
+     *      Note: When we add I-P to handle static routes changes, we need
+     *      to revisit this handler.
+     */
     return true;
 }
 

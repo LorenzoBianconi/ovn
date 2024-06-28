@@ -10377,7 +10377,7 @@ parsed_route_lookup(struct hmap *routes, size_t hash,
     return NULL;
 }
 
-static bool
+static void
 parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
                   struct hmap *routes, struct simap *route_tables,
                   const struct nbrec_logical_router_static_route *route)
@@ -10393,7 +10393,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
             VLOG_WARN_RL(&rl, "bad 'nexthop' %s in static route "
                          UUID_FMT, route->nexthop,
                          UUID_ARGS(&route->header_.uuid));
-            return false;
+            return;
         }
         if ((IN6_IS_ADDR_V4MAPPED(&nexthop) && plen != 32) ||
             (!IN6_IS_ADDR_V4MAPPED(&nexthop) && plen != 128)) {
@@ -10401,7 +10401,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
             VLOG_WARN_RL(&rl, "bad next hop mask %s in static route "
                          UUID_FMT, route->nexthop,
                          UUID_ARGS(&route->header_.uuid));
-            return false;
+            return;
         }
     }
 
@@ -10412,7 +10412,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
         VLOG_WARN_RL(&rl, "bad 'ip_prefix' %s in static route "
                      UUID_FMT, route->ip_prefix,
                      UUID_ARGS(&route->header_.uuid));
-        return false;
+        return;
     }
 
     /* Verify that ip_prefix and nexthop have same address familiy. */
@@ -10423,7 +10423,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
                          " %s and 'nexthop' %s in static route "UUID_FMT,
                          route->ip_prefix, route->nexthop,
                          UUID_ARGS(&route->header_.uuid));
-            return false;
+            return;
         }
     }
 
@@ -10432,7 +10432,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
         !find_static_route_outport(od, lr_ports, route,
                                    IN6_IS_ADDR_V4MAPPED(&prefix),
                                    NULL, NULL)) {
-        return false;
+        return;
     }
 
     const struct nbrec_bfd *nb_bt = route->bfd;
@@ -10444,7 +10444,7 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
 
         if (!strcmp(nb_bt->status, "down")) {
             ovs_mutex_unlock(&bfd_lock);
-            return false;
+            return;
         }
         ovs_mutex_unlock(&bfd_lock);
     }
@@ -10468,19 +10468,16 @@ parsed_routes_add(struct ovn_datapath *od, const struct hmap *lr_ports,
     struct parsed_route *pr = parsed_route_lookup(routes, hash, new_pr);
     if (!pr) {
         hmap_insert(routes, &new_pr->key_node, hash);
-        return true;
     } else {
         pr->stale = false;
         free(new_pr);
     }
-    return false;
 }
 
-bool
+void
 build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
                     struct hmap *routes, struct simap *route_tables)
 {
-    bool ret = false;
     struct parsed_route *pr;
     HMAP_FOR_EACH (pr, key_node, routes) {
         if (pr->nbr == od->nbr) {
@@ -10489,10 +10486,8 @@ build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
     }
 
     for (int i = 0; i < od->nbr->n_static_routes; i++) {
-        if (parsed_routes_add(od, lr_ports, routes, route_tables,
-                              od->nbr->static_routes[i])) {
-            ret = true;
-        }
+        parsed_routes_add(od, lr_ports, routes, route_tables,
+                          od->nbr->static_routes[i]);
     }
 
     HMAP_FOR_EACH_SAFE (pr, key_node, routes) {
@@ -10500,12 +10495,9 @@ build_parsed_routes(struct ovn_datapath *od, const struct hmap *lr_ports,
             continue;
         }
 
-        ret = true;
         hmap_remove(routes, &pr->key_node);
         free(pr);
     }
-
-    return ret;
 }
 
 struct ecmp_route_list_node {
@@ -13013,12 +13005,11 @@ route_policies_lookup(struct hmap *route_policies, size_t hash,
     return NULL;
 }
 
-bool
+void
 build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
                      struct hmap *route_policies)
 {
     struct route_policy *rp;
-    bool ret = false;
 
     HMAP_FOR_EACH (rp, key_node, route_policies) {
         if (rp->nbr == od->nbr) {
@@ -13063,7 +13054,6 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
         rp = route_policies_lookup(route_policies, hash, new_rp);
         if (!rp) {
             hmap_insert(route_policies, &new_rp->key_node, hash);
-            ret = true;
         } else {
             rp->stale = false;
             free(valid_nexthops);
@@ -13076,13 +13066,10 @@ build_route_policies(struct ovn_datapath *od, struct hmap *lr_ports,
             continue;
         }
 
-        ret = true;
         hmap_remove(route_policies, &rp->key_node);
         free(rp->valid_nexthops);
         free(rp);
     }
-
-    return ret;
 }
 
 /* Logical router ingress table POLICY: Policy.
