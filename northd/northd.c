@@ -9183,6 +9183,11 @@ build_lswitch_arp_nd_responder_default(struct ovn_datapath *od,
     ovs_assert(od->nbs);
     ovn_lflow_add(lflows, od, S_SWITCH_IN_ARP_ND_RSP, 0, "1", "next;",
                   lflow_ref);
+
+    /* Do never reply to GARPs packets. */
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_ARP_ND_RSP, 150,
+                  "arp.tpa == arp.spa && eth.dst == ff:ff:ff:ff:ff:ff",
+                  "next;", lflow_ref);
 }
 
 /* Ingress table 19: ARP/ND responder for service monitor source ip.
