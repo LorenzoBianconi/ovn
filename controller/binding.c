@@ -234,16 +234,15 @@ add_or_del_qos_port(const char *ovn_port, bool add)
     qos_port->added = add;
 }
 
-/* 34359738360 == (2^32 - 1) * 8.  netdev_set_qos() doesn't support
- * 64-bit rate netlink attributes, so the maximum value is 2^32 - 1
- * bytes. The 'max-rate' config option is in bits, so multiplying by 8.
- * Without setting max-rate the reported link speed will be used, which
- * can be unrecognized for certain NICs or reported too low for virtual
- * interfaces. */
-#define OVN_QOS_MAX_RATE    34359738360ULL
+/* Use 10Gbps as default rate if link_speed is not set since too high values
+ * does not allow the system to queue packets and properly apply selected queue
+ * shaping.
+ */
+#define OVN_QOS_MAX_RATE    10000000000ULL
 static bool
 add_ovs_qos_table_entry(struct ovsdb_idl_txn *ovs_idl_txn,
                         const struct ovsrec_port *port,
+                        const struct ovsrec_interface *iface,
                         unsigned long long min_rate,
                         unsigned long long max_rate,
                         unsigned long long burst,
@@ -258,11 +257,17 @@ add_ovs_qos_table_entry(struct ovsdb_idl_txn *ovs_idl_txn,
         return false;
     }
 
+    unsigned long long root_rate =
+        iface->n_link_speed ? *iface->link_speed : OVN_QOS_MAX_RATE;
+    if (max_rate > root_rate) {
+        max_rate = root_rate;
+    }
+
     if (!qos) {
         qos = ovsrec_qos_insert(ovs_idl_txn);
         ovsrec_qos_set_type(qos, OVN_QOS_TYPE);
         ovsrec_port_set_qos(port, qos);
-        smap_add_format(&other_config, "max-rate", "%lld", OVN_QOS_MAX_RATE);
+        smap_add_format(&other_config, "max-rate", "%lld", root_rate);
         ovsrec_qos_set_other_config(qos, &other_config);
         smap_clear(&other_config);
 
@@ -391,9 +396,9 @@ configure_qos(const struct sbrec_port_binding *pb,
         }
         if (iface) {
             /* Add new QoS entries. */
-            if (add_ovs_qos_table_entry(ovs_idl_txn, port, min_rate,
-                                    max_rate, burst, queue_id,
-                                    pb->logical_port)) {
+            if (add_ovs_qos_table_entry(ovs_idl_txn, port, iface, min_rate,
+                                        max_rate, burst, queue_id,
+                                        pb->logical_port)) {
                 if (!q) {
                     q = xzalloc(sizeof *q);
                     hmap_insert(qos_map, &q->node, hash);
