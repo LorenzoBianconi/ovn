@@ -16,10 +16,8 @@
 
 #include "lib/inc-proc-eng.h"
 
-/*struct routes_sync_data {
-    struct sset routes;
-};*/
-
+bool routes_sync_northd_change_handler(struct engine_node *node,
+                                       void *data OVS_UNUSED);
 void *en_routes_sync_init(struct engine_node *, struct engine_arg *);
 void en_routes_sync_cleanup(void *data);
 void en_routes_sync_run(struct engine_node *, void *data);
