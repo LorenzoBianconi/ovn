@@ -484,4 +484,19 @@ void ovn_exit_args_finish(struct ovn_exit_args *exit_args);
 bool ovn_update_swconn_at(struct rconn *swconn, const char *target,
                           int probe_interval, const char *where);
 
+/* Return true if both strings are either NULL or equal to each other */
+static inline bool
+streq(const char *s1, const char *s2)
+{
+    if (s1) {
+        if (s2 && !strcmp(s1, s2)) {
+            return true;
+        }
+    } else if (!s2) {
+        return true;
+    }
+    return false;
+}
+
+
 #endif /* OVN_UTIL_H */

@@ -178,6 +178,8 @@ struct route_policy {
     char **valid_nexthops;
     const struct nbrec_logical_router *nbr;
     bool stale;
+    char *lrp_addr_s;
+    struct ovn_port *out_port;
 };
 
 struct static_routes_data {
@@ -708,6 +710,8 @@ struct parsed_route {
     const struct nbrec_logical_router *nbr;
     bool stale;
     struct sset ecmp_selection_fields;
+    char *lrp_addr_s;
+    struct ovn_port *out_port;
 };
 
 void ovnnb_db_run(struct northd_input *input_data,
