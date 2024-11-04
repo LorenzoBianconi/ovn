@@ -26,6 +26,7 @@
 #include "en-northd.h"
 #include "en-meters.h"
 #include "en-sampling-app.h"
+#include "en-routes-sync.h"
 #include "lflow-mgr.h"
 
 #include "lib/inc-proc-eng.h"

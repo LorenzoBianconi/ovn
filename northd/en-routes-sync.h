@@ -15,11 +15,29 @@
 #define EN_ROUTES_SYNC_H 1
 
 #include "lib/inc-proc-eng.h"
+#include "lib/uuidset.h"
+#include "openvswitch/hmap.h"
+
+struct routes_sync_tracked_data {
+  /* Contains the uuids of all NB Logical Routers where we used a
+   * lr_stateful_record during computation. */
+  struct uuidset nb_lr_stateful;
+};
+
+struct routes_sync_data {
+    struct hmap parsed_routes;
+
+    /* Node's tracked data. */
+    struct routes_sync_tracked_data trk_data;
+};
 
 bool routes_sync_northd_change_handler(struct engine_node *node,
-                                       void *data OVS_UNUSED);
+                                       void *data);
+bool routes_sync_lr_stateful_change_handler(struct engine_node *node,
+                                            void *data);
 void *en_routes_sync_init(struct engine_node *, struct engine_arg *);
 void en_routes_sync_cleanup(void *data);
+void en_routes_sync_clear_tracked_data(void *data);
 void en_routes_sync_run(struct engine_node *, void *data);
 
 

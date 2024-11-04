@@ -164,7 +164,7 @@ static ENGINE_NODE(route_policies, "route_policies");
 static ENGINE_NODE(routes, "routes");
 static ENGINE_NODE(bfd, "bfd");
 static ENGINE_NODE(bfd_sync, "bfd_sync");
-static ENGINE_NODE(routes_sync, "routes_sync");
+static ENGINE_NODE_WITH_CLEAR_TRACK_DATA(routes_sync, "routes_sync");
 
 void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
                           struct ovsdb_idl_loop *sb)
@@ -272,6 +272,8 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_routes_sync, &en_sb_route, NULL);
     engine_add_input(&en_routes_sync, &en_northd,
                      routes_sync_northd_change_handler);
+    engine_add_input(&en_routes_sync, &en_lr_stateful,
+                     routes_sync_lr_stateful_change_handler);
 
     engine_add_input(&en_sync_meters, &en_nb_acl, NULL);
     engine_add_input(&en_sync_meters, &en_nb_meter, NULL);
