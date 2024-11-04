@@ -498,5 +498,6 @@ streq(const char *s1, const char *s2)
     return false;
 }
 
+bool prefix_is_link_local(const struct in6_addr *prefix, unsigned int plen);
 
 #endif /* OVN_UTIL_H */
