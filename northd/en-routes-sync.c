@@ -15,6 +15,7 @@
 #include <config.h>
 
 #include "openvswitch/vlog.h"
+#include "smap.h"
 #include "stopwatch.h"
 #include "northd.h"
 
@@ -128,6 +129,13 @@ route_erase_entry(struct route_entry *route_e)
     free(route_e);
 }
 
+static bool
+get_nbrp_or_nbr_option(const struct ovn_port *op, const char *key)
+{
+    return smap_get_bool(&op->nbrp->options, key,
+        smap_get_bool(&op->od->nbr->options, key, false));
+}
+
 static void
 routes_table_sync(struct ovsdb_idl_txn *ovnsb_txn,
                   const struct sbrec_route_table *sbrec_route_table,
@@ -162,6 +170,16 @@ routes_table_sync(struct ovsdb_idl_txn *ovnsb_txn,
         }
         if (!smap_get_bool(&route->od->nbr->options, "dynamic-routing",
                            false)) {
+            continue;
+        }
+        if (route->source == ROUTE_SOURCE_CONNECTED &&
+                !get_nbrp_or_nbr_option(route->out_port,
+                                        "dynamic-routing-connected")) {
+            continue;
+        }
+        if (route->source == ROUTE_SOURCE_STATIC &&
+                !get_nbrp_or_nbr_option(route->out_port,
+                                        "dynamic-routing-static")) {
             continue;
         }
         route_e = route_lookup_or_add(&sync_routes,
