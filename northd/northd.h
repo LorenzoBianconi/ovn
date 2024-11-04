@@ -51,6 +51,7 @@ struct northd_input {
     const struct sbrec_chassis_template_var_table
         *sbrec_chassis_template_var_table;
     const struct sbrec_mirror_table *sbrec_mirror_table;
+    const struct sbrec_route_table *sbrec_route_table;
 
     /* Northd lb data node inputs*/
     const struct hmap *lbs;

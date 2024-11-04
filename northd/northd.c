@@ -3418,6 +3418,28 @@ cleanup_mac_bindings(
     }
 }
 
+/* Remove received route entries that refer to logical_ports which are
+ * deleted. */
+static void
+cleanup_routes(
+    const struct sbrec_route_table *sbrec_route_table,
+    struct hmap *lr_datapaths, struct hmap *lr_ports)
+{
+    const struct sbrec_route *r;
+    SBREC_ROUTE_TABLE_FOR_EACH_SAFE (r, sbrec_route_table) {
+        const struct ovn_datapath *od =
+            ovn_datapath_from_sbrec(NULL, lr_datapaths, r->datapath);
+        if (strcmp(r->type, "receive")) {
+            continue;
+        }
+
+        if (!od || ovn_datapath_is_stale(od) ||
+                !ovn_port_find(lr_ports, r->logical_port)) {
+            sbrec_route_delete(r);
+        }
+    }
+}
+
 static void
 cleanup_sb_ha_chassis_groups(
     const struct sbrec_ha_chassis_group_table *sbrec_ha_chassis_group_table,
@@ -4221,6 +4243,7 @@ build_ports(struct ovsdb_idl_txn *ovnsb_txn,
     const struct sbrec_mirror_table *sbrec_mirror_table,
     const struct sbrec_mac_binding_table *sbrec_mac_binding_table,
     const struct sbrec_ha_chassis_group_table *sbrec_ha_chassis_group_table,
+    const struct sbrec_route_table *sbrec_route_table,
     struct ovsdb_idl_index *sbrec_chassis_by_name,
     struct ovsdb_idl_index *sbrec_chassis_by_hostname,
     struct ovsdb_idl_index *sbrec_ha_chassis_grp_by_name,
@@ -4246,7 +4269,7 @@ build_ports(struct ovsdb_idl_txn *ovnsb_txn,
                        &tag_alloc_table, &sb_only, &nb_only, &both);
 
     /* Purge stale Mac_Bindings if ports are deleted. */
-    bool remove_mac_bindings = !ovs_list_is_empty(&sb_only);
+    bool any_sb_port_deleted = !ovs_list_is_empty(&sb_only);
 
     /* Assign explicitly requested tunnel ids first. */
     struct ovn_port *op;
@@ -4288,7 +4311,7 @@ build_ports(struct ovsdb_idl_txn *ovnsb_txn,
          * Mac_Bindings are purged.
          */
         if (op->od->sb != op->sb->datapath) {
-            remove_mac_bindings = true;
+            any_sb_port_deleted = true;
         }
         if (op->nbsp) {
             tag_alloc_create_new_tag(&tag_alloc_table, op->nbsp);
@@ -4334,8 +4357,9 @@ build_ports(struct ovsdb_idl_txn *ovnsb_txn,
         hmap_insert(lr_ports, &op->key_node, op->key_node.hash);
     }
 
-    if (remove_mac_bindings) {
+    if (any_sb_port_deleted) {
         cleanup_mac_bindings(sbrec_mac_binding_table, lr_datapaths, lr_ports);
+        cleanup_routes(sbrec_route_table, lr_datapaths, lr_ports);
     }
 
     tag_alloc_destroy(&tag_alloc_table);
@@ -19221,6 +19245,7 @@ ovnnb_db_run(struct northd_input *input_data,
                 input_data->sbrec_mirror_table,
                 input_data->sbrec_mac_binding_table,
                 input_data->sbrec_ha_chassis_group_table,
+                input_data->sbrec_route_table,
                 input_data->sbrec_chassis_by_name,
                 input_data->sbrec_chassis_by_hostname,
                 input_data->sbrec_ha_chassis_grp_by_name,
