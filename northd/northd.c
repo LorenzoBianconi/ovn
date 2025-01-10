@@ -3669,7 +3669,7 @@ build_lb_datapaths(const struct hmap *lbs, const struct hmap *lb_groups,
                 &od->nbs->load_balancer[i]->header_.uuid;
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
             ovs_assert(lb_dps);
-            ovn_lb_datapaths_add_ls(lb_dps, 1, &od);
+            ovn_lb_datapaths_add_ls(lb_dps, 1, &od, ods_size(ls_datapaths));
             if (od->lb_with_stateless_mode) {
                 hmapx_add(&lb_dps->ls_lb_with_stateless_mode, od);
             }
@@ -3705,7 +3705,7 @@ build_lb_datapaths(const struct hmap *lbs, const struct hmap *lb_groups,
                 &od->nbr->load_balancer[i]->header_.uuid;
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
             ovs_assert(lb_dps);
-            ovn_lb_datapaths_add_lr(lb_dps, 1, &od);
+            ovn_lb_datapaths_add_lr(lb_dps, 1, &od, ods_size(lr_datapaths));
         }
     }
 
@@ -3715,10 +3715,12 @@ build_lb_datapaths(const struct hmap *lbs, const struct hmap *lb_groups,
                 &lb_group_dps->lb_group->lbs[j]->nlb->header_.uuid;
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
             ovs_assert(lb_dps);
-            ovn_lb_datapaths_add_ls(lb_dps, lb_group_dps->n_ls,
-                                    lb_group_dps->ls);
-            ovn_lb_datapaths_add_lr(lb_dps, lb_group_dps->n_lr,
-                                    lb_group_dps->lr);
+            ovn_lb_datapaths_add_ls(lb_dps, vector_len(&lb_group_dps->ls),
+                                    vector_get_array(&lb_group_dps->ls),
+                                    ods_size(ls_datapaths));
+            ovn_lb_datapaths_add_lr(lb_dps, vector_len(&lb_group_dps->lr),
+                                    vector_get_array(&lb_group_dps->lr),
+                                    ods_size(lr_datapaths));
         }
     }
 }
@@ -3764,6 +3766,7 @@ build_lb_svcs(
 
 static void
 build_lswitch_lbs_from_lrouter(struct ovn_datapaths *lr_datapaths,
+                               struct ovn_datapaths *ls_datapaths,
                                struct hmap *lb_dps_map,
                                struct hmap *lb_group_dps_map)
 {
@@ -3779,14 +3782,15 @@ build_lswitch_lbs_from_lrouter(struct ovn_datapaths *lr_datapaths,
                            lb_dps->nb_lr_map.map) {
             struct ovn_datapath *od = lr_datapaths->array[index];
             ovn_lb_datapaths_add_ls(lb_dps, vector_len(&od->ls_peers),
-                                    vector_get_array(&od->ls_peers));
+                                    vector_get_array(&od->ls_peers),
+                                    ods_size(ls_datapaths));
         }
     }
 
     struct ovn_lb_group_datapaths *lb_group_dps;
     HMAP_FOR_EACH (lb_group_dps, hmap_node, lb_group_dps_map) {
-        for (size_t i = 0; i < lb_group_dps->n_lr; i++) {
-            struct ovn_datapath *od = lb_group_dps->lr[i];
+        struct ovn_datapath *od;
+        VECTOR_FOR_EACH (&lb_group_dps->lr, od) {
             ovn_lb_group_datapaths_add_ls(lb_group_dps,
                                           vector_len(&od->ls_peers),
                                           vector_get_array(&od->ls_peers));
@@ -3796,7 +3800,8 @@ build_lswitch_lbs_from_lrouter(struct ovn_datapaths *lr_datapaths,
                 lb_dps = ovn_lb_datapaths_find(lb_dps_map, lb_uuid);
                 ovs_assert(lb_dps);
                 ovn_lb_datapaths_add_ls(lb_dps, vector_len(&od->ls_peers),
-                                        vector_get_array(&od->ls_peers));
+                                        vector_get_array(&od->ls_peers),
+                                        ods_size(ls_datapaths));
             }
         }
     }
@@ -3827,7 +3832,9 @@ build_lb_port_related_data(
     const struct sbrec_service_monitor_table *sbrec_service_monitor_table,
     const char *svc_monitor_mac,
     const struct eth_addr *svc_monitor_mac_ea,
-    struct ovn_datapaths *lr_datapaths, struct hmap *ls_ports,
+    struct ovn_datapaths *lr_datapaths,
+    struct ovn_datapaths *ls_datapaths,
+    struct hmap *ls_ports,
     struct hmap *lb_dps_map, struct hmap *lb_group_dps_map,
     struct sset *svc_monitor_lsps,
     struct hmap *svc_monitor_map)
@@ -3835,7 +3842,8 @@ build_lb_port_related_data(
     build_lb_svcs(ovnsb_txn, sbrec_service_monitor_table, svc_monitor_mac,
                   svc_monitor_mac_ea, ls_ports, lb_dps_map,
                   svc_monitor_lsps, svc_monitor_map);
-    build_lswitch_lbs_from_lrouter(lr_datapaths, lb_dps_map, lb_group_dps_map);
+    build_lswitch_lbs_from_lrouter(lr_datapaths, ls_datapaths, lb_dps_map,
+                                   lb_group_dps_map);
 }
 
 /* Returns true if the peer port IPs of op should be added in the nat_addresses
@@ -5324,7 +5332,7 @@ northd_handle_lb_data_changes(struct tracked_lb_data *trk_lb_data,
         UUIDSET_FOR_EACH (uuidnode, &codlb->assoc_lbs) {
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, &uuidnode->uuid);
             ovs_assert(lb_dps);
-            ovn_lb_datapaths_add_ls(lb_dps, 1, &od);
+            ovn_lb_datapaths_add_ls(lb_dps, 1, &od, ods_size(ls_datapaths));
 
             if (od->lb_with_stateless_mode) {
                 hmapx_add(&lb_dps->ls_lb_with_stateless_mode, od);
@@ -5346,7 +5354,8 @@ northd_handle_lb_data_changes(struct tracked_lb_data *trk_lb_data,
                     = &lbgrp_dps->lb_group->lbs[j]->nlb->header_.uuid;
                 lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
                 ovs_assert(lb_dps);
-                ovn_lb_datapaths_add_ls(lb_dps, 1, &od);
+                ovn_lb_datapaths_add_ls(lb_dps, 1, &od,
+                                        ods_size(ls_datapaths));
 
                 /* Add the lb to the northd tracked data. */
                 hmapx_add(&nd_changes->trk_lbs.crupdated, lb_dps);
@@ -5365,7 +5374,7 @@ northd_handle_lb_data_changes(struct tracked_lb_data *trk_lb_data,
         UUIDSET_FOR_EACH (uuidnode, &codlb->assoc_lbs) {
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, &uuidnode->uuid);
             ovs_assert(lb_dps);
-            ovn_lb_datapaths_add_lr(lb_dps, 1, &od);
+            ovn_lb_datapaths_add_lr(lb_dps, 1, &od, ods_size(lr_datapaths));
 
             /* Add the lb to the northd tracked data. */
             hmapx_add(&nd_changes->trk_lbs.crupdated, lb_dps);
@@ -5383,7 +5392,8 @@ northd_handle_lb_data_changes(struct tracked_lb_data *trk_lb_data,
                     = &lbgrp_dps->lb_group->lbs[j]->nlb->header_.uuid;
                 lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
                 ovs_assert(lb_dps);
-                ovn_lb_datapaths_add_lr(lb_dps, 1, &od);
+                ovn_lb_datapaths_add_lr(lb_dps, 1, &od,
+                                        ods_size(lr_datapaths));
 
                 /* Add the lb to the northd tracked data. */
                 hmapx_add(&nd_changes->trk_lbs.crupdated, lb_dps);
@@ -5422,14 +5432,14 @@ northd_handle_lb_data_changes(struct tracked_lb_data *trk_lb_data,
             lb_uuid = &lb->nlb->header_.uuid;
             lb_dps = ovn_lb_datapaths_find(lb_datapaths_map, lb_uuid);
             ovs_assert(lb_dps);
-            for (size_t i = 0; i < lbgrp_dps->n_lr; i++) {
-                od = lbgrp_dps->lr[i];
-                ovn_lb_datapaths_add_lr(lb_dps, 1, &od);
+            VECTOR_FOR_EACH (&lbgrp_dps->lr, od) {
+                ovn_lb_datapaths_add_lr(lb_dps, 1, &od,
+                                        ods_size(lr_datapaths));
             }
 
-            for (size_t i = 0; i < lbgrp_dps->n_ls; i++) {
-               od = lbgrp_dps->ls[i];
-                ovn_lb_datapaths_add_ls(lb_dps, 1, &od);
+            VECTOR_FOR_EACH (&lbgrp_dps->ls, od) {
+                ovn_lb_datapaths_add_ls(lb_dps, 1, &od,
+                                        ods_size(ls_datapaths));
 
                 /* Add the ls datapath to the northd tracked data. */
                 hmapx_add(&nd_changes->ls_with_changed_lbs, od);
@@ -19215,7 +19225,9 @@ ovnnb_db_run(struct northd_input *input_data,
                                input_data->sbrec_service_monitor_table,
                                input_data->svc_monitor_mac,
                                &input_data->svc_monitor_mac_ea,
-                               &data->lr_datapaths, &data->ls_ports,
+                               &data->lr_datapaths,
+                               &data->ls_datapaths,
+                               &data->ls_ports,
                                &data->lb_datapaths_map,
                                &data->lb_group_datapaths_map,
                                &data->svc_monitor_lsps,
