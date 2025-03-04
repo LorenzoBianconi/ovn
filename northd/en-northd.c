@@ -111,6 +111,14 @@ northd_get_input_data(struct engine_node *node,
     input_data->svc_monitor_mac_ea = global_config->svc_monitor_mac_ea;
     input_data->features = &global_config->features;
     input_data->vxlan_mode = global_config->vxlan_mode;
+
+    const struct ovn_synced_logical_switch_map *synced_lses =
+        engine_get_input_data("datapath_synced_logical_switch", node);
+    input_data->synced_lses = synced_lses;
+
+    const struct ovn_synced_logical_router_map *synced_lrs =
+        engine_get_input_data("datapath_synced_logical_router", node);
+    input_data->synced_lrs = synced_lrs;
 }
 
 void
@@ -498,6 +506,38 @@ northd_sb_fdb_change_handler(struct engine_node *node, void *data)
         sbrec_fdb_delete(fdb_prev_del);
     }
 
+    return true;
+}
+
+bool northd_synced_lr_handler(struct engine_node *node OVS_UNUSED,
+                              void *data OVS_UNUSED)
+{
+    /* Currently, northd handles logical router changes in a node that
+     * reads directly from the northbound logical router table. That node
+     * will trigger a recompute if conditions on changed logical routers
+     * cannot be handled. From en-northd's perspective, synced logical
+     * router changes are always handled.
+     *
+     * Once datapath syncing has incremental processing added, then
+     * en-northd can move its logical router change handling here and
+     * remove the northbound logical router table as an input.
+     */
+    return true;
+}
+
+bool northd_synced_ls_handler(struct engine_node *node OVS_UNUSED,
+                              void *data OVS_UNUSED)
+{
+    /* Currently, northd handles logical switch changes in a node that
+     * reads directly from the northbound logical switch table. That node
+     * will trigger a recompute if conditions on changed logical switches
+     * cannot be handled. From en-northd's perspective, synced logical
+     * switch changes are always handled.
+     *
+     * Once datapath syncing has incremental processing added, then
+     * en-northd can move its logical switch change handling here and
+     * remove the northbound logical switch table as an input.
+     */
     return true;
 }
 
