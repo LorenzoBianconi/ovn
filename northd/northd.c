@@ -6174,9 +6174,8 @@ build_lswitch_output_port_sec_od(struct ovn_datapath *od,
 
 static void
 skip_port_from_conntrack(const struct ovn_datapath *od, struct ovn_port *op,
-                         bool has_stateful_acl, enum ovn_stage in_stage,
-                         enum ovn_stage out_stage, uint16_t priority,
-                         struct lflow_table *lflows,
+                         enum ovn_stage in_stage, enum ovn_stage out_stage,
+                         uint16_t priority, struct lflow_table *lflows,
                          struct lflow_ref *lflow_ref)
 {
     /* Can't use ct() for router ports. Consider the following configuration:
@@ -6189,19 +6188,14 @@ skip_port_from_conntrack(const struct ovn_datapath *od, struct ovn_port *op,
      * router on hostA, not hostB. This would only work with distributed
      * conntrack state across all chassis. */
 
-    const char *ingress_action = "next;";
-    const char *egress_action = has_stateful_acl
-                                ? "next;"
-                                : "ct_clear; next;";
-
     char *ingress_match = xasprintf("ip && inport == %s", op->json_key);
     char *egress_match = xasprintf("ip && outport == %s", op->json_key);
 
     ovn_lflow_add_with_lport_and_hint(lflows, od, in_stage, priority,
-                                      ingress_match, ingress_action,
+                                      ingress_match, "next;",
                                       op->key, &op->nbsp->header_, lflow_ref);
     ovn_lflow_add_with_lport_and_hint(lflows, od, out_stage, priority,
-                                      egress_match, egress_action,
+                                      egress_match, "ct_clear; next;",
                                       op->key, &op->nbsp->header_, lflow_ref);
 
     free(ingress_match);
@@ -6300,13 +6294,13 @@ build_ls_stateful_rec_pre_acls(
             if (op->enable_router_port_acl) {
                 continue;
             }
-            skip_port_from_conntrack(od, op, true,
-                                     S_SWITCH_IN_PRE_ACL, S_SWITCH_OUT_PRE_ACL,
-                                     110, lflows, lflow_ref);
+            skip_port_from_conntrack(od, op, S_SWITCH_IN_PRE_ACL,
+                                     S_SWITCH_OUT_PRE_ACL, 110,
+                                     lflows, lflow_ref);
         }
         struct ovn_port *lp;
         VECTOR_FOR_EACH (&od->localnet_ports, lp) {
-            skip_port_from_conntrack(od, lp, true, S_SWITCH_IN_PRE_ACL,
+            skip_port_from_conntrack(od, lp, S_SWITCH_IN_PRE_ACL,
                                      S_SWITCH_OUT_PRE_ACL, 110, lflows,
                                      lflow_ref);
         }
@@ -6510,9 +6504,8 @@ build_ls_stateful_rec_pre_lb(const struct ls_stateful_record *ls_stateful_rec,
 {
     struct ovn_port *op;
     VECTOR_FOR_EACH (&od->router_ports, op) {
-        skip_port_from_conntrack(od, op, ls_stateful_rec->has_stateful_acl,
-                                 S_SWITCH_IN_PRE_LB, S_SWITCH_OUT_PRE_LB,
-                                 110, lflows, lflow_ref);
+        skip_port_from_conntrack(od, op, S_SWITCH_IN_PRE_LB,
+                                 S_SWITCH_OUT_PRE_LB, 110, lflows, lflow_ref);
     }
 
     /* Localnet ports have no need for going through conntrack, unless
@@ -6523,9 +6516,9 @@ build_ls_stateful_rec_pre_lb(const struct ls_stateful_record *ls_stateful_rec,
     if (!ls_stateful_rec->has_lb_vip) {
         struct ovn_port *lp;
         VECTOR_FOR_EACH (&od->localnet_ports, lp) {
-            skip_port_from_conntrack(od, lp, ls_stateful_rec->has_stateful_acl,
-                                     S_SWITCH_IN_PRE_LB, S_SWITCH_OUT_PRE_LB,
-                                     110, lflows, lflow_ref);
+            skip_port_from_conntrack(od, lp, S_SWITCH_IN_PRE_LB,
+                                     S_SWITCH_OUT_PRE_LB, 110, lflows,
+                                     lflow_ref);
         }
     }
 
