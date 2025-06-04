@@ -268,7 +268,7 @@ struct engine_node {
     /* Method used to dump info about node input compute failues. It may be
      * NULL.
      */
-    void (*dump_compute_failure_info)(struct engine_node *);
+    void (*get_compute_failure_info)(struct engine_node *);
 
     /* Engine stats. */
     struct engine_stats stats;
@@ -313,6 +313,11 @@ void *engine_get_input_data(const char *input_name, struct engine_node *);
 void engine_add_input(struct engine_node *node, struct engine_node *input,
                       enum engine_input_handler_result (*change_handler)
                           (struct engine_node *, void *));
+void engine_add_input_with_compute_debug(
+        struct engine_node *node, struct engine_node *input,
+        enum engine_input_handler_result (*change_handler)
+            (struct engine_node *, void *),
+        void (*get_compute_failure_info)(struct engine_node *));
 
 /* Force the engine to recompute everything. It is used
  * in circumstances when we are not sure there is change or not, or
@@ -428,7 +433,7 @@ void engine_ovsdb_node_add_index(struct engine_node *, const char *name,
     .is_valid = en_##NAME##_is_valid
 
 #define COMPUTE_FAIL_INFO(NAME) \
-        .dump_compute_failure_info = en_##NAME##_compute_failure_info,
+        .get_compute_failure_info = en_##NAME##_compute_failure_info,
 
 #define ENGINE_NODE2(NAME, ARG1) \
     ENGINE_NODE_DEF_START(NAME, #NAME) \

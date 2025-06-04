@@ -192,6 +192,11 @@ engine_set_log_timeout_cmd(struct unixctl_conn *conn, int argc OVS_UNUSED,
     unixctl_command_reply(conn, NULL);
 }
 
+static void
+engine_get_compute_failure_info(struct engine_node *node OVS_UNUSED)
+{
+}
+
 void
 engine_init(struct engine_node *node, struct engine_arg *arg)
 {
@@ -203,6 +208,11 @@ engine_init(struct engine_node *node, struct engine_arg *arg)
             sorted_node->data = sorted_node->init(sorted_node, arg);
         } else {
             sorted_node->data = NULL;
+        }
+        if (!sorted_node->get_compute_failure_info) {
+            /* Provide default get_compute_failure_info implementation. */
+            sorted_node->get_compute_failure_info =
+                engine_get_compute_failure_info;
         }
     }
 
@@ -262,6 +272,17 @@ engine_add_input(struct engine_node *node, struct engine_node *input,
     node->inputs[node->n_inputs].node = input;
     node->inputs[node->n_inputs].change_handler = change_handler;
     node->n_inputs ++;
+}
+
+void
+engine_add_input_with_compute_debug(
+        struct engine_node *node, struct engine_node *input,
+        enum engine_input_handler_result (*change_handler)
+            (struct engine_node *, void *),
+        void (*get_compute_failure_info)(struct engine_node *))
+{
+    engine_add_input(node, input, change_handler);
+    node->get_compute_failure_info = get_compute_failure_info;
 }
 
 struct ovsdb_idl_index *
@@ -461,9 +482,7 @@ engine_compute(struct engine_node *node, bool recompute_allowed)
                          node->name, input_node->name, delta_time);
             }
             if (handled == EN_UNHANDLED) {
-                if (input_node->dump_compute_failure_info) {
-                    input_node->dump_compute_failure_info(input_node);
-                }
+                input_node->get_compute_failure_info(input_node);
                 engine_recompute(node, recompute_allowed,
                                  "failed handler for input %s",
                                  input_node->name);
@@ -513,9 +532,7 @@ engine_run_node(struct engine_node *node, bool recompute_allowed)
                 engine_recompute(node, recompute_allowed,
                                  "missing handler for input %s",
                                  input_node->name);
-                if (input_node->dump_compute_failure_info) {
-                    input_node->dump_compute_failure_info(input_node);
-                }
+                input_node->get_compute_failure_info(input_node);
                 return;
             }
         }
