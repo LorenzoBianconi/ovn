@@ -16,6 +16,8 @@
 #include <config.h>
 
 #include "datapath-sync.h"
+#include "openvswitch/hmap.h"
+#include "ovn-util.h"
 
 static const char *ovn_datapath_strings [] = {
     [DP_SWITCH] = "logical-switch",
@@ -42,6 +44,20 @@ ovn_datapath_type_to_string(enum ovn_datapath_type dp_type)
         dp_type = DP_MAX;
     }
     return ovn_datapath_strings[dp_type];
+}
+
+struct ovn_unsynced_datapath *
+ovn_unsynced_datapath_find(const struct ovn_unsynced_datapath_map *map,
+                           const struct uuid *uuid, const char *name,
+                           enum ovn_datapath_type type)
+{
+    struct ovn_unsynced_datapath *dp;
+    HMAP_FOR_EACH_WITH_HASH (dp, hmap_node, uuid_hash(uuid), &map->dps) {
+        if (dp->type == type && !strcmp(dp->name, name)) {
+            return dp;
+        }
+    }
+    return NULL;
 }
 
 struct ovn_unsynced_datapath *

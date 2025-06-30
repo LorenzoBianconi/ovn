@@ -75,6 +75,10 @@ struct ovn_synced_datapaths {
     struct ovs_list synced_dps;
 };
 
+struct ovn_unsynced_datapath *
+ovn_unsynced_datapath_find(const struct ovn_unsynced_datapath_map *map,
+                           const struct uuid *uuid, const char *name,
+                           enum ovn_datapath_type type);
 struct ovn_unsynced_datapath *ovn_unsynced_datapath_alloc(
     const char *name, enum ovn_datapath_type type,
     uint32_t requested_tunnel_key, const struct ovsdb_idl_row *nb_row);
