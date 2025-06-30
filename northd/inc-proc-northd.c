@@ -217,8 +217,10 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_acl_id, &en_nb_acl, NULL);
     engine_add_input(&en_acl_id, &en_sb_acl_id, NULL);
 
-    engine_add_input(&en_datapath_logical_switch, &en_nb_logical_switch, NULL);
-    engine_add_input(&en_datapath_logical_switch, &en_global_config, NULL);
+    engine_add_input(&en_datapath_logical_switch, &en_nb_logical_switch,
+                     datapath_logical_switch_handler);
+    engine_add_input(&en_datapath_logical_switch, &en_global_config,
+                     datapath_logical_switch_handler);
 
     engine_add_input(&en_datapath_logical_router, &en_nb_logical_router, NULL);
 
