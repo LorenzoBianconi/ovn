@@ -22,6 +22,7 @@
 #include "lib/sset.h"
 #include "northd/en-port-group.h"
 #include "northd/ipam.h"
+#include "northd/lb.h"
 #include "openvswitch/hmap.h"
 #include "simap.h"
 #include "ovs-thread.h"
@@ -89,7 +90,8 @@ struct ovn_datapaths {
     struct hmap datapaths;
 
     /* The array index of each element in 'datapaths'. */
-    struct ovn_datapath **array;
+    struct dynamic_bitmap dps_index_map;
+    struct vector dps;
 };
 
 static inline size_t
@@ -108,6 +110,13 @@ bool od_has_lb_vip(const struct ovn_datapath *od);
 enum redirected_routing_protcol_flag_type {
     REDIRECT_BGP = (1 << 0),
     REDIRECT_BFD = (1 << 1),
+};
+
+struct tracked_dps {
+    /* Tracked created or updated datapaths. */
+    struct hmapx crupdated;
+    /* Tracked deleted datapaths. */
+    struct hmapx deleted;
 };
 
 struct tracked_ovn_ports {
@@ -141,6 +150,7 @@ enum northd_tracked_data_type {
     NORTHD_TRACKED_LR_NATS  = (1 << 2),
     NORTHD_TRACKED_LS_LBS   = (1 << 3),
     NORTHD_TRACKED_LS_ACLS  = (1 << 4),
+    NORTHD_TRACKED_SWITCHES = (1 << 5),
 };
 
 /* Track what's changed in the northd engine node.
@@ -149,6 +159,7 @@ enum northd_tracked_data_type {
 struct northd_tracked_data {
     /* Indicates the type of data tracked.  One or all of NORTHD_TRACKED_*. */
     enum northd_tracked_data_type type;
+    struct tracked_dps trk_switches;
     struct tracked_ovn_ports trk_lsps;
     struct tracked_lbs trk_lbs;
 
@@ -433,7 +444,7 @@ ovn_datapaths_find_by_index(const struct ovn_datapaths *ovn_datapaths,
                             size_t od_index)
 {
     ovs_assert(od_index <= hmap_count(&ovn_datapaths->datapaths));
-    return ovn_datapaths->array[od_index];
+    return vector_get(&ovn_datapaths->dps, od_index, struct ovn_datapath *);
 }
 
 struct ovn_datapath *ovn_datapath_from_sbrec(
@@ -951,6 +962,13 @@ static inline bool
 northd_has_ls_acls_in_tracked_data(struct northd_tracked_data *trk_nd_changes)
 {
     return trk_nd_changes->type & NORTHD_TRACKED_LS_ACLS;
+}
+
+static inline bool
+northd_has_lswitches_in_tracked_data(
+        struct northd_tracked_data *trk_nd_changes)
+{
+    return trk_nd_changes->type & NORTHD_TRACKED_SWITCHES;
 }
 
 /* Returns 'true' if the IPv4 'addr' is on the same subnet with one of the
