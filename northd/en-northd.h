@@ -23,6 +23,8 @@ enum engine_input_handler_result
 northd_nb_logical_router_handler(struct engine_node *, void *data);
 enum engine_input_handler_result
 northd_sb_port_binding_handler(struct engine_node *, void *data);
+enum engine_input_handler_result
+northd_sb_datapath_binding_handler(struct engine_node *, void *data);
 enum engine_input_handler_result northd_lb_data_handler(struct engine_node *,
                                                         void *data);
 enum engine_input_handler_result
