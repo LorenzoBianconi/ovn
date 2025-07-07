@@ -18,6 +18,8 @@
 #include "datapath-sync.h"
 #include "openvswitch/hmap.h"
 #include "ovn-util.h"
+#include "ovsdb-idl-provider.h"
+#include "uuid.h"
 
 static const char *ovn_datapath_strings[] = {
     [DP_SWITCH] = "logical-switch",
@@ -90,6 +92,9 @@ ovn_unsynced_datapath_map_init(struct ovn_unsynced_datapath_map *map,
 {
     *map = (struct ovn_unsynced_datapath_map) {
         .dps = HMAP_INITIALIZER(&map->dps),
+        .new = HMAPX_INITIALIZER(&map->new),
+        .deleted = HMAPX_INITIALIZER(&map->deleted),
+        .updated = HMAPX_INITIALIZER(&map->updated),
         .dp_type = dp_type,
     };
 }
@@ -103,4 +108,23 @@ ovn_unsynced_datapath_map_destroy(struct ovn_unsynced_datapath_map *map)
         free(dp);
     }
     hmap_destroy(&map->dps);
+}
+
+void
+ovn_unsynced_datapath_map_clear_tracked_data(
+    struct ovn_unsynced_datapath_map *map)
+{
+    hmapx_clear(&map->new);
+    hmapx_clear(&map->updated);
+
+    /* Deleted entries need to be freed since they don't
+     * exist in map->dps.
+     */
+    struct hmapx_node *node;
+    HMAPX_FOR_EACH_SAFE (node, &map->deleted) {
+        struct ovn_unsynced_datapath *udp = node->data;
+        ovn_unsynced_datapath_destroy(udp);
+        free(udp);
+        hmapx_delete(&map->deleted, node);
+    }
 }
