@@ -70,6 +70,41 @@ find_unsynced_datapath(const struct ovn_unsynced_datapath_map **maps,
     return NULL;
 }
 
+static struct ovn_synced_datapath *
+find_synced_datapath_from_udp(
+        const struct ovn_synced_datapaths *synced_datapaths,
+        const struct ovn_unsynced_datapath *udp)
+{
+    struct ovn_synced_datapath *sdp;
+    uint32_t hash = uuid_hash(&udp->nb_row->uuid);
+    HMAP_FOR_EACH_WITH_HASH (sdp, hmap_node, hash,
+                             &synced_datapaths->synced_dps) {
+        if (uuid_equals(&sdp->nb_row->uuid, &udp->nb_row->uuid)) {
+            return sdp;
+        }
+    }
+
+    return NULL;
+}
+
+static struct ovn_synced_datapath *
+find_synced_datapath_from_sb(
+        const struct ovn_synced_datapaths *synced_datapaths,
+        const struct sbrec_datapath_binding *sb_dp)
+{
+    struct ovn_synced_datapath *sdp;
+    uint32_t hash = uuid_hash(sb_dp->nb_uuid);
+    HMAP_FOR_EACH_WITH_HASH (sdp, hmap_node, hash,
+                             &synced_datapaths->synced_dps) {
+        if (uuid_equals(&sdp->nb_row->uuid, sb_dp->nb_uuid) &&
+            sdp->tunnel_key == sb_dp->tunnel_key) {
+            return sdp;
+        }
+    }
+
+    return NULL;
+}
+
 struct candidate_sdp {
     struct ovn_synced_datapath *sdp;
     uint32_t requested_tunnel_key;
@@ -86,6 +121,7 @@ synced_datapath_alloc(const struct ovn_unsynced_datapath *udp,
     *sdp = (struct ovn_synced_datapath) {
         .sb_dp = sb_dp,
         .nb_row = udp->nb_row,
+        .update_sb_dp = true,
     };
     sbrec_datapath_binding_set_external_ids(sb_dp, &udp->external_ids);
 
@@ -192,6 +228,7 @@ assign_requested_tunnel_keys(struct vector *candidate_sdps,
                                               candidate->requested_tunnel_key);
         hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
                     uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+        candidate->sdp->tunnel_key = candidate->requested_tunnel_key;
         candidate->tunnel_key_assigned = true;
     }
 }
@@ -213,6 +250,7 @@ assign_existing_tunnel_keys(struct vector *candidate_sdps,
                           candidate->existing_tunnel_key)) {
             hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
                     uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+            candidate->sdp->tunnel_key = candidate->existing_tunnel_key;
             candidate->tunnel_key_assigned = true;
         }
     }
@@ -240,6 +278,7 @@ allocate_tunnel_keys(struct vector *candidate_sdps,
                                               tunnel_key);
         hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
                     uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+        candidate->sdp->tunnel_key = tunnel_key;
         candidate->tunnel_key_assigned = true;
     }
 }
@@ -255,6 +294,156 @@ delete_unassigned_candidates(struct vector *candidate_sdps)
         sbrec_datapath_binding_delete(candidate->sdp->sb_dp);
         free(candidate->sdp);
     }
+}
+
+static enum engine_input_handler_result
+datapath_sync_unsynced_datapath_handler(
+        const struct ovn_unsynced_datapath_map *map,
+        const struct ed_type_global_config *global_config,
+        struct ovsdb_idl_txn *ovnsb_idl_txn, void *data)
+{
+    enum engine_input_handler_result ret = EN_HANDLED_UNCHANGED;
+    struct ovn_synced_datapaths *synced_datapaths = data;
+    struct ovn_unsynced_datapath *udp;
+    struct ovn_synced_datapath *sdp;
+
+    struct hmapx_node *n;
+    HMAPX_FOR_EACH (n, &map->new) {
+        udp = n->data;
+        uint32_t tunnel_key;
+
+        if (find_synced_datapath_from_udp(synced_datapaths, udp)) {
+            return EN_UNHANDLED;
+        }
+
+        if (udp->requested_tunnel_key) {
+            tunnel_key = udp->requested_tunnel_key;
+            if (!ovn_add_tnlid(&synced_datapaths->dp_tnlids, tunnel_key)) {
+                return EN_UNHANDLED;
+            }
+        } else {
+            uint32_t hint = 0;
+            tunnel_key = ovn_allocate_tnlid(&synced_datapaths->dp_tnlids,
+                                            "datapath", OVN_MIN_DP_KEY_LOCAL,
+                                            global_config->max_dp_tunnel_id,
+                                            &hint);
+            if (!tunnel_key) {
+                return EN_UNHANDLED;
+            }
+        }
+
+        struct sbrec_datapath_binding *sb_dp =
+            sbrec_datapath_binding_insert(ovnsb_idl_txn);
+        sbrec_datapath_binding_set_tunnel_key(sb_dp, tunnel_key);
+        sdp = synced_datapath_alloc(udp, sb_dp);
+        hmap_insert(&synced_datapaths->synced_dps, &sdp->hmap_node,
+                    uuid_hash(sb_dp->nb_uuid));
+        ret = EN_HANDLED_UPDATED;
+    }
+
+    HMAPX_FOR_EACH (n, &map->deleted) {
+        udp = n->data;
+        sdp = find_synced_datapath_from_udp(synced_datapaths, udp);
+        if (!sdp || sdp->update_sb_dp) {
+            return EN_UNHANDLED;
+        }
+        hmap_remove(&synced_datapaths->synced_dps, &sdp->hmap_node);
+        ovn_free_tnlid(&synced_datapaths->dp_tnlids,
+                       sdp->sb_dp->tunnel_key);
+
+        sbrec_datapath_binding_delete(sdp->sb_dp);
+        free(sdp);
+        ret = EN_HANDLED_UPDATED;
+    }
+
+    HMAPX_FOR_EACH (n, &map->updated) {
+        udp = n->data;
+        sdp = find_synced_datapath_from_udp(synced_datapaths, udp);
+        if (!sdp || sdp->update_sb_dp) {
+            return EN_UNHANDLED;
+        }
+        if (udp->requested_tunnel_key &&
+            udp->requested_tunnel_key != sdp->sb_dp->tunnel_key) {
+            if (!ovn_add_tnlid(&synced_datapaths->dp_tnlids,
+                               udp->requested_tunnel_key)) {
+                return EN_UNHANDLED;
+            }
+            sbrec_datapath_binding_set_tunnel_key(sdp->sb_dp,
+                                                  udp->requested_tunnel_key);
+            ret = EN_HANDLED_UPDATED;
+        }
+        if (!smap_equal(&udp->external_ids, &sdp->sb_dp->external_ids)) {
+            sbrec_datapath_binding_set_external_ids(sdp->sb_dp,
+                                                    &udp->external_ids);
+            ret = EN_HANDLED_UPDATED;
+        }
+        if (!uuid_equals(&udp->nb_row->uuid, &sdp->nb_row->uuid)) {
+            sbrec_datapath_binding_set_nb_uuid(sdp->sb_dp,
+                                               &udp->nb_row->uuid, 1);
+            ret = EN_HANDLED_UPDATED;
+        }
+    }
+
+    return ret;
+}
+
+enum engine_input_handler_result
+datapath_sync_logical_switch_handler(struct engine_node *node, void *data)
+{
+    const struct ovn_unsynced_datapath_map *map =
+        engine_get_input_data("datapath_logical_switch", node);
+    const struct engine_context *eng_ctx = engine_get_context();
+    const struct ed_type_global_config *global_config =
+        engine_get_input_data("global_config", node);
+
+    return datapath_sync_unsynced_datapath_handler(map, global_config,
+                                                   eng_ctx->ovnsb_idl_txn,
+                                                   data);
+}
+
+enum engine_input_handler_result
+datapath_sync_logical_router_handler(struct engine_node *node, void *data)
+{
+    const struct ovn_unsynced_datapath_map *map =
+        engine_get_input_data("datapath_logical_router", node);
+    const struct engine_context *eng_ctx = engine_get_context();
+    const struct ed_type_global_config *global_config =
+        engine_get_input_data("global_config", node);
+
+    return datapath_sync_unsynced_datapath_handler(map, global_config,
+                                                   eng_ctx->ovnsb_idl_txn,
+                                                   data);
+}
+
+enum engine_input_handler_result
+datapath_sync_sb_datapath_binding(struct engine_node *node, void *data)
+{
+    const struct sbrec_datapath_binding_table *sb_dp_table =
+        EN_OVSDB_GET(engine_get_input("SB_datapath_binding", node));
+    enum engine_input_handler_result ret = EN_HANDLED_UNCHANGED;
+    struct ovn_synced_datapaths *synced_datapaths = data;
+
+    const struct sbrec_datapath_binding *sb_dp;
+    SBREC_DATAPATH_BINDING_TABLE_FOR_EACH_TRACKED (sb_dp, sb_dp_table) {
+        struct ovn_synced_datapath *sdp =
+            find_synced_datapath_from_sb(synced_datapaths, sb_dp);
+        if (!sdp) {
+            return EN_UNHANDLED;
+        }
+
+        if (sbrec_datapath_binding_is_deleted(sb_dp)) {
+            hmap_remove(&synced_datapaths->synced_dps, &sdp->hmap_node);
+            free(sdp);
+            ovn_free_tnlid(&synced_datapaths->dp_tnlids, sb_dp->tunnel_key);
+            ret = EN_HANDLED_UPDATED;
+        } else if (sdp->update_sb_dp) {
+            sdp->update_sb_dp = false;
+            sdp->sb_dp = sb_dp;
+            ret = EN_HANDLED_UPDATED;
+        }
+    }
+
+    return ret;
 }
 
 enum engine_node_state

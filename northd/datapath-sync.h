@@ -74,6 +74,10 @@ struct ovn_synced_datapath {
     struct hmap_node hmap_node;
     const struct ovsdb_idl_row *nb_row;
     const struct sbrec_datapath_binding *sb_dp;
+    /* SB datapath_binding must be refreshed with stable
+     * pointer to DB row. */
+    bool update_sb_dp;
+    int64_t tunnel_key;
 };
 
 struct ovn_synced_datapaths {
