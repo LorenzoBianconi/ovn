@@ -78,6 +78,7 @@ struct ovn_synced_datapath {
 
 struct ovn_synced_datapaths {
     struct hmap synced_dps;
+    struct hmap dp_tnlids;
 
     bool has_tracked_data;
     struct hmapx new;
