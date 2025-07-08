@@ -79,6 +79,7 @@ struct ovn_synced_datapath {
 
 struct ovn_synced_datapaths {
     struct ovs_list synced_dps;
+    struct hmap dp_tnlids;
 };
 
 struct ovn_unsynced_datapath *
