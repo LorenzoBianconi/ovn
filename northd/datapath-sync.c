@@ -63,6 +63,20 @@ ovn_unsynced_datapath_find(const struct ovn_unsynced_datapath_map *map,
 }
 
 struct ovn_unsynced_datapath *
+ovn_unsynced_datapath_find_in_ip_table(const struct hmapx *map,
+                                       struct ovn_unsynced_datapath *dp)
+{
+    struct hmapx_node *n;
+    HMAPX_FOR_EACH (n, map) {
+        struct ovn_unsynced_datapath *e = n->data;
+        if (e->type == dp->type && !strcmp(e->name, dp->name)) {
+            return e;
+        }
+    }
+    return NULL;
+}
+
+struct ovn_unsynced_datapath *
 ovn_unsynced_datapath_alloc(const char *name, enum ovn_datapath_type type,
                             uint32_t requested_tunnel_key,
                             const struct ovsdb_idl_row *nb_row)

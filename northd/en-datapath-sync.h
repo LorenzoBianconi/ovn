@@ -21,6 +21,10 @@
 
 void *en_datapath_sync_init(struct engine_node *,
                             struct engine_arg *);
+enum engine_input_handler_result
+datapath_sync_logical_switch_handler(struct engine_node *, void *data);
+enum engine_input_handler_result
+datapath_sync_logical_router_handler(struct engine_node *, void *data);
 enum engine_node_state en_datapath_sync_run(struct engine_node *, void *data);
 void en_datapath_sync_cleanup(void *data);
 

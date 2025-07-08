@@ -38,7 +38,7 @@ en_datapath_logical_switch_init(struct engine_node *node OVS_UNUSED,
     return map;
 }
 
-static void
+static struct ovn_unsynced_datapath *
 datapath_unsynced_new_logical_switch_handler(
         const struct nbrec_logical_switch *nbs,
         const struct ed_type_global_config *global_config,
@@ -94,6 +94,8 @@ datapath_unsynced_new_logical_switch_handler(
     smap_add_format(&dp->external_ids, "logical-switch", UUID_FMT,
                     UUID_ARGS(&nbs->header_.uuid));
     hmap_insert(&map->dps, &dp->hmap_node, uuid_hash(&nbs->header_.uuid));
+
+    return dp;
 }
 
 enum engine_input_handler_result
@@ -116,16 +118,17 @@ datapath_logical_switch_handler(struct engine_node *node, void *data)
             if (dp) {
                 return EN_UNHANDLED;
             }
-            datapath_unsynced_new_logical_switch_handler(nbs, global_config,
-                                                         map);
+            dp = datapath_unsynced_new_logical_switch_handler(nbs,
+                                                              global_config,
+                                                              map);
+            hmapx_add(&map->new, dp);
             ret = EN_HANDLED_UPDATED;
         } else if (nbrec_logical_switch_is_deleted(nbs)) {
             if (!dp) {
                 return EN_UNHANDLED;
             }
             hmap_remove(&map->dps, &dp->hmap_node);
-            ovn_unsynced_datapath_destroy(dp);
-            free(dp);
+            hmapx_add(&map->deleted, dp);
             ret = EN_HANDLED_UPDATED;
         } else {
             if (!dp) {
@@ -142,6 +145,10 @@ datapath_logical_switch_handler(struct engine_node *node, void *data)
             if (dp->requested_tunnel_key != requested_tunnel_key) {
                 dp->requested_tunnel_key = requested_tunnel_key;
                 ret = EN_HANDLED_UPDATED;
+                if (ovn_unsynced_datapath_find_in_ip_table(&map->updated,
+                                                           dp)) {
+                    hmapx_add(&map->updated, dp);
+                }
             }
 
             struct smap external_ids = SMAP_INITIALIZER(&external_ids);
@@ -178,12 +185,23 @@ datapath_logical_switch_handler(struct engine_node *node, void *data)
                 smap_destroy(&dp->external_ids);
                 smap_clone(&dp->external_ids, &external_ids);
                 ret = EN_HANDLED_UPDATED;
+                if (ovn_unsynced_datapath_find_in_ip_table(&map->updated,
+                                                           dp)) {
+                    hmapx_add(&map->updated, dp);
+                }
             }
             smap_destroy(&external_ids);
         }
     }
 
     return ret;
+}
+
+void
+en_datapath_logical_switch_clear_tracked_data(void *data)
+{
+    struct ovn_unsynced_datapath_map *map = data;
+    ovn_unsynced_datapath_map_clear_tracked_data(map);
 }
 
 enum engine_node_state
