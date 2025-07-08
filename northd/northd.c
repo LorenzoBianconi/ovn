@@ -581,7 +581,7 @@ ovn_datapath_from_sbrec(const struct hmap *ls_datapaths,
     struct uuid key;
     const char *type;
     if (!datapath_get_nb_uuid_and_type(sb, &key, &type)) {
-        return false;
+        return NULL;
     }
 
     if (!strcmp(type, "logical-switch")) {
@@ -589,7 +589,7 @@ ovn_datapath_from_sbrec(const struct hmap *ls_datapaths,
     } else if (!strcmp(type, "logical-router")) {
         dps = lr_datapaths;
     } else {
-        return false;
+        return NULL;
     }
 
     struct ovn_datapath *od = ovn_datapath_find_(dps, &key);
