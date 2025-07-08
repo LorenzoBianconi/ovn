@@ -78,6 +78,11 @@ struct ovn_synced_datapath {
 
 struct ovn_synced_datapaths {
     struct hmap synced_dps;
+
+    bool has_tracked_data;
+    struct hmapx new;
+    struct hmapx updated;
+    struct hmapx deleted;
 };
 
 struct ovn_unsynced_datapath *ovn_unsynced_datapath_alloc(
