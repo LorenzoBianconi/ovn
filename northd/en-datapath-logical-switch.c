@@ -345,7 +345,8 @@ en_datapath_synced_logical_switch_datapath_sync_handler(
         engine_get_input_data("datapath_sync", node);
     struct ovn_synced_logical_switch_map *switch_map = data;
 
-    if (!dps->has_tracked_data) {
+    if (!(hmapx_count(&dps->new) + hmapx_count(&dps->deleted) +
+          hmapx_count(&dps->updated))) {
         return EN_UNHANDLED;
     }
 
