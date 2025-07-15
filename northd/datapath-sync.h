@@ -70,10 +70,27 @@ struct ovn_unsynced_datapath_map {
     struct hmapx deleted;
 };
 
+/* Engine nodes that are downstream from en_datapath_sync
+ * may want to cache a struct sbrec_datapath_binding. However,
+ * this can be dangerous to do. Pointers to struct
+ * sbrec_datapath_binding that are created by calling
+ * sbrec_datapath_binding_insert() are temporary pointers
+ * that are freed when the transaction is committed.
+ *
+ * Engine nodes can safely cache a southbound datapath
+ * binding by instead caching an ovn_datapath_binding
+ * struct. The pointer within is guaranteed to be safe
+ * to use, since en_datapath_sync will update it to be
+ * a "permanent" pointer instead of a temporary one.
+ */
+struct ovn_datapath_binding {
+    const struct sbrec_datapath_binding *sb;
+};
+
 struct ovn_synced_datapath {
     struct hmap_node hmap_node;
     const struct ovsdb_idl_row *nb_row;
-    const struct sbrec_datapath_binding *sb_dp;
+    struct ovn_datapath_binding dp;
     /* SB datapath_binding must be refreshed with stable
      * pointer to DB row. */
     bool update_sb_dp;

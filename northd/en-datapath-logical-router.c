@@ -288,7 +288,7 @@ synced_logical_router_alloc(const struct ovn_synced_datapath *sdp)
     *lr = (struct ovn_synced_logical_router) {
         .nb = CONTAINER_OF(sdp->nb_row, struct nbrec_logical_router,
                            header_),
-        .sb = sdp->sb_dp,
+        .dp = &sdp->dp,
     };
     return lr;
 }

@@ -291,7 +291,7 @@ synced_logical_switch_alloc(const struct ovn_synced_datapath *sdp)
     *lsw = (struct ovn_synced_logical_switch) {
         .nb = CONTAINER_OF(sdp->nb_row, struct nbrec_logical_switch,
                            header_),
-        .sb = sdp->sb_dp,
+        .dp = &sdp->dp,
     };
     return lsw;
 }

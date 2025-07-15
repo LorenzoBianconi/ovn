@@ -122,7 +122,9 @@ synced_datapath_alloc(const struct ovn_unsynced_datapath *udp,
     struct ovn_synced_datapath *sdp;
     sdp = xmalloc(sizeof *sdp);
     *sdp = (struct ovn_synced_datapath) {
-        .sb_dp = sb_dp,
+        .dp = {
+            .sb = sb_dp,
+        },
         .nb_row = udp->nb_row,
         .update_sb_dp = update_sb_dp,
     };
@@ -241,10 +243,10 @@ assign_requested_tunnel_keys(struct vector *candidate_sdps,
                          candidate->requested_tunnel_key);
             continue;
         }
-        sbrec_datapath_binding_set_tunnel_key(candidate->sdp->sb_dp,
+        sbrec_datapath_binding_set_tunnel_key(candidate->sdp->dp.sb,
                                               candidate->requested_tunnel_key);
         hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
-                    uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+                    uuid_hash(candidate->sdp->dp.sb->nb_uuid));
         candidate->tunnel_key_assigned = true;
     }
 }
@@ -265,7 +267,7 @@ assign_existing_tunnel_keys(struct vector *candidate_sdps,
         if (ovn_add_tnlid(&synced_datapaths->dp_tnlids,
                           candidate->existing_tunnel_key)) {
             hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
-                    uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+                    uuid_hash(candidate->sdp->dp.sb->nb_uuid));
             candidate->tunnel_key_assigned = true;
         }
     }
@@ -289,10 +291,10 @@ allocate_tunnel_keys(struct vector *candidate_sdps,
         if (!tunnel_key) {
             continue;
         }
-        sbrec_datapath_binding_set_tunnel_key(candidate->sdp->sb_dp,
+        sbrec_datapath_binding_set_tunnel_key(candidate->sdp->dp.sb,
                                               tunnel_key);
         hmap_insert(&synced_datapaths->synced_dps, &candidate->sdp->hmap_node,
-                    uuid_hash(candidate->sdp->sb_dp->nb_uuid));
+                    uuid_hash(candidate->sdp->dp.sb->nb_uuid));
         candidate->tunnel_key_assigned = true;
     }
 }
@@ -305,7 +307,7 @@ delete_unassigned_candidates(struct vector *candidate_sdps)
         if (candidate->tunnel_key_assigned) {
             continue;
         }
-        sbrec_datapath_binding_delete(candidate->sdp->sb_dp);
+        sbrec_datapath_binding_delete(candidate->sdp->dp.sb);
         free(candidate->sdp);
     }
 }
@@ -336,8 +338,8 @@ datapath_sync_unsynced_datapath_handler(
         hmap_remove(&synced_datapaths->synced_dps, &sdp->hmap_node);
         hmapx_add(&synced_datapaths->deleted, sdp);
         ovn_free_tnlid(&synced_datapaths->dp_tnlids,
-                       sdp->sb_dp->tunnel_key);
-        sbrec_datapath_binding_delete(sdp->sb_dp);
+                       sdp->dp.sb->tunnel_key);
+        sbrec_datapath_binding_delete(sdp->dp.sb);
         ret = EN_HANDLED_UPDATED;
     }
 
@@ -382,24 +384,24 @@ datapath_sync_unsynced_datapath_handler(
             return EN_UNHANDLED;
         }
         if (udp->requested_tunnel_key &&
-            udp->requested_tunnel_key != sdp->sb_dp->tunnel_key) {
+            udp->requested_tunnel_key != sdp->dp.sb->tunnel_key) {
             if (!ovn_add_tnlid(&synced_datapaths->dp_tnlids,
                                udp->requested_tunnel_key)) {
                 return EN_UNHANDLED;
             }
-            sbrec_datapath_binding_set_tunnel_key(sdp->sb_dp,
+            sbrec_datapath_binding_set_tunnel_key(sdp->dp.sb,
                                                   udp->requested_tunnel_key);
             hmapx_add(&synced_datapaths->updated, sdp);
             ret = EN_HANDLED_UPDATED;
         }
-        if (!smap_equal(&udp->external_ids, &sdp->sb_dp->external_ids)) {
-            sbrec_datapath_binding_set_external_ids(sdp->sb_dp,
+        if (!smap_equal(&udp->external_ids, &sdp->dp.sb->external_ids)) {
+            sbrec_datapath_binding_set_external_ids(sdp->dp.sb,
                                                     &udp->external_ids);
             hmapx_add(&synced_datapaths->updated, sdp);
             ret = EN_HANDLED_UPDATED;
         }
         if (!uuid_equals(&udp->nb_row->uuid, &sdp->nb_row->uuid)) {
-            sbrec_datapath_binding_set_nb_uuid(sdp->sb_dp,
+            sbrec_datapath_binding_set_nb_uuid(sdp->dp.sb,
                                                &udp->nb_row->uuid, 1);
             hmapx_add(&synced_datapaths->updated, sdp);
             ret = EN_HANDLED_UPDATED;
@@ -465,7 +467,7 @@ datapath_sync_sb_datapath_binding(struct engine_node *node, void *data)
 
         if (sdp->update_sb_dp) {
             sdp->update_sb_dp = false;
-            sdp->sb_dp = sb_dp;
+            sdp->dp.sb = sb_dp;
             ret = EN_HANDLED_UPDATED;
             hmapx_add(&synced_datapaths->updated, sdp);
         }

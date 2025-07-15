@@ -56,7 +56,7 @@ ar_entry_add_nocopy(struct hmap *routes, const struct ovn_datapath *od,
     route_e->ip_prefix = ip_prefix;
     route_e->tracked_port = tracked_port;
     route_e->source = source;
-    uint32_t hash = uuid_hash(&od->sb->header_.uuid);
+    uint32_t hash = uuid_hash(&od->dp->sb->header_.uuid);
     hash = hash_string(op->sb->logical_port, hash);
     hash = hash_string(ip_prefix, hash);
     hmap_insert(routes, &route_e->hmap_node, hash);
@@ -92,7 +92,7 @@ ar_entry_find(struct hmap *route_map,
 
     HMAP_FOR_EACH_WITH_HASH (route_e, hmap_node, hash, route_map) {
         if (!uuid_equals(&sb_db->header_.uuid,
-                         &route_e->od->sb->header_.uuid)) {
+                         &route_e->od->dp->sb->header_.uuid)) {
             continue;
         }
         if (!uuid_equals(&logical_port->header_.uuid,
@@ -285,7 +285,7 @@ build_nat_route_for_port(const struct ovn_port *advertising_op,
             ? ovn_port_find(ls_ports, nat->nb->logical_port)
             : nat->l3dgw_port;
 
-        if (!ar_entry_find(routes, advertising_od->sb, advertising_op->sb,
+        if (!ar_entry_find(routes, advertising_od->dp->sb, advertising_op->sb,
                            nat->nb->external_ip,
                            tracked_port ? tracked_port->sb : NULL)) {
             ar_entry_add(routes, advertising_od, advertising_op,
@@ -825,7 +825,7 @@ advertised_route_table_sync(
     HMAP_FOR_EACH_POP (route_e, hmap_node, &sync_routes) {
         const struct sbrec_advertised_route *sr =
             sbrec_advertised_route_insert(ovnsb_txn);
-        sbrec_advertised_route_set_datapath(sr, route_e->od->sb);
+        sbrec_advertised_route_set_datapath(sr, route_e->od->dp->sb);
         sbrec_advertised_route_set_logical_port(sr, route_e->op->sb);
         sbrec_advertised_route_set_ip_prefix(sr, route_e->ip_prefix);
         if (route_e->tracked_port) {
