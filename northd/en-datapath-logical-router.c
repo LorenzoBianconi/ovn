@@ -282,7 +282,7 @@ en_datapath_synced_logical_router_init(struct engine_node *node OVS_UNUSED,
 }
 
 static struct ovn_synced_logical_router *
-synced_logical_router_alloc(const struct ovn_synced_datapath *sdp)
+synced_logical_router_alloc(struct ovn_synced_datapath *sdp)
 {
     struct ovn_synced_logical_router *lr = xmalloc(sizeof *lr);
     *lr = (struct ovn_synced_logical_router) {

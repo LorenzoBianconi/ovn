@@ -285,7 +285,7 @@ en_datapath_synced_logical_switch_init(struct engine_node *node OVS_UNUSED,
 }
 
 static struct ovn_synced_logical_switch *
-synced_logical_switch_alloc(const struct ovn_synced_datapath *sdp)
+synced_logical_switch_alloc(struct ovn_synced_datapath *sdp)
 {
     struct ovn_synced_logical_switch *lsw = xmalloc(sizeof *lsw);
     *lsw = (struct ovn_synced_logical_switch) {

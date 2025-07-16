@@ -488,7 +488,7 @@ static struct ovn_datapath *
 ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
                     const struct nbrec_logical_switch *nbs,
                     const struct nbrec_logical_router *nbr,
-                    const struct ovn_datapath_binding *dp)
+                    struct ovn_datapath_binding *dp)
 {
     struct ovn_datapath *od = xzalloc(sizeof *od);
     od->key = *key;
