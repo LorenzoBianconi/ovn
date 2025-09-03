@@ -8542,8 +8542,8 @@ check ovn-nbctl lsp-set-addresses sw1p1 "50:54:00:00:00:03 20.0.0.3"
 
 check ovn-nbctl --apply-after-lb acl-add sw1 from-lport 1001 'inport == "sw1p1" && ip4' drop
 
-check ovn-nbctl acl-add sw1 to-lport 1002 'ip4 && tcp && tcp.dst == 80' allow-related
-check ovn-nbctl acl-add sw1 to-lport 1001 'ip4' drop
+check ovn-nbctl acl-add sw1 to-lport 1002 'outport == "sw1p1" && ip4 && tcp && tcp.dst == 80' allow-related
+check ovn-nbctl acl-add sw1 to-lport 1001 'outport == "sw1p1" && ip4' drop
 
 ADD_NAMESPACES(sw0p1)
 ADD_VETH(sw0p1, sw0p1, br-int, "10.0.0.3/24", "50:54:00:00:00:02", \
