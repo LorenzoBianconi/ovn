@@ -17687,6 +17687,7 @@ struct lswitch_flow_build_info {
     struct hmap *route_policies;
     struct simap *route_tables;
     const struct sbrec_acl_id_table *sbrec_acl_id_table;
+    struct lflow_ref *igmp_lflow_ref;
 };
 
 /* Helper function to combine all lflow generation which is iterated by
@@ -17724,7 +17725,8 @@ build_lswitch_and_lrouter_iterate_by_ls(struct ovn_datapath *od,
     } else {
         build_lswitch_lflows_l2_unknown(od, lsi->lflows, od->ref_lflows);
     }
-    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions, od->ref_lflows);
+    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions,
+                              lsi->igmp_lflow_ref);
 }
 
 /* Helper function to combine all lflow generation which is iterated by
@@ -18067,7 +18069,8 @@ build_lswitch_and_lrouter_flows(
     const struct group_ecmp_route_data *route_data,
     struct hmap *route_policies,
     struct simap *route_tables,
-    const struct sbrec_acl_id_table *sbrec_acl_id_table)
+    const struct sbrec_acl_id_table *sbrec_acl_id_table,
+    struct lflow_ref *igmp_lflow_ref)
 {
 
     char *svc_check_match = xasprintf("eth.dst == %s", svc_monitor_mac);
@@ -18108,6 +18111,7 @@ build_lswitch_and_lrouter_flows(
             lsiv[index].route_tables = route_tables;
             lsiv[index].route_policies = route_policies;
             lsiv[index].sbrec_acl_id_table = sbrec_acl_id_table;
+            lsiv[index].igmp_lflow_ref = igmp_lflow_ref;
             ds_init(&lsiv[index].match);
             ds_init(&lsiv[index].actions);
 
@@ -18156,6 +18160,7 @@ build_lswitch_and_lrouter_flows(
             .match = DS_EMPTY_INITIALIZER,
             .actions = DS_EMPTY_INITIALIZER,
             .sbrec_acl_id_table = sbrec_acl_id_table,
+            .igmp_lflow_ref = igmp_lflow_ref,
         };
 
         /* Combined build - all lflow generation from lswitch and lrouter
@@ -18327,7 +18332,8 @@ void build_lflows(struct ovsdb_idl_txn *ovnsb_txn,
                                     input_data->route_data,
                                     input_data->route_policies,
                                     input_data->route_tables,
-                                    input_data->sbrec_acl_id_table);
+                                    input_data->sbrec_acl_id_table,
+                                    input_data->igmp_lflow_ref);
     build_igmp_lflows(input_data->igmp_groups,
                       &input_data->ls_datapaths->datapaths,
                       lflows, input_data->igmp_lflow_ref);
@@ -18414,6 +18420,7 @@ lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     struct lswitch_flow_build_info lsi = {
         .meter_groups = lflow_input->meter_groups,
+        .igmp_lflow_ref = lflow_input->igmp_lflow_ref,
         .lflows = lflows,
         .match = DS_EMPTY_INITIALIZER,
         .actions = DS_EMPTY_INITIALIZER,
