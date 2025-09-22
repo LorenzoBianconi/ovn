@@ -738,14 +738,17 @@ lflow_table_add_lflow(struct lflow_table *lflow_table,
             lrn->lflow = lflow;
             lrn->lflow_ref = lflow_ref;
             lrn->dpgrp_lflow = !od;
-            if (lrn->dpgrp_lflow) {
-                lrn->dpgrp_bitmap = bitmap_clone(dp_bitmap, dp_bitmap_len);
-                lrn->dpgrp_bitmap_len = dp_bitmap_len;
-            } else {
+            if (!lrn->dpgrp_lflow) {
                 lrn->dp_index = od->index;
             }
             ovs_list_insert(&lflow->referenced_by, &lrn->ref_list_node);
             hmap_insert(&lflow_ref->lflow_ref_nodes, &lrn->ref_node, hash);
+        }
+
+        if (lrn->dpgrp_lflow) {
+            bitmap_free(lrn->dpgrp_bitmap);
+            lrn->dpgrp_bitmap = bitmap_clone(dp_bitmap, dp_bitmap_len);
+            lrn->dpgrp_bitmap_len = dp_bitmap_len;
         }
 
         if (!lrn->linked) {
