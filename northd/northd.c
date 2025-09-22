@@ -5729,10 +5729,13 @@ enum mirror_filter {
 
 static void
 build_mirror_default_lflow(struct ovn_datapath *od,
-                           struct lflow_table *lflows)
+                           struct lflow_table *lflows,
+                           struct lflow_ref *lflow_ref)
 {
-    ovn_lflow_add(lflows, od, S_SWITCH_IN_MIRROR, 0, "1", "next;", NULL);
-    ovn_lflow_add(lflows, od, S_SWITCH_OUT_MIRROR, 0, "1", "next;", NULL);
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_MIRROR, 0, "1", "next;",
+                  lflow_ref);
+    ovn_lflow_add(lflows, od, S_SWITCH_OUT_MIRROR, 0, "1", "next;",
+                  lflow_ref);
 }
 
 static void
@@ -18569,6 +18572,7 @@ struct lswitch_flow_build_info {
     struct hmap *route_policies;
     struct simap *route_tables;
     const struct sbrec_acl_id_table *sbrec_acl_id_table;
+    struct lflow_ref *igmp_lflow_ref;
 };
 
 /* Helper function to combine all lflow generation which is iterated by
@@ -18582,31 +18586,39 @@ build_lswitch_and_lrouter_iterate_by_ls(struct ovn_datapath *od,
                                         struct lswitch_flow_build_info *lsi)
 {
     ovs_assert(od->nbs);
-    build_mirror_default_lflow(od, lsi->lflows);
+    build_mirror_default_lflow(od, lsi->lflows, od->datapath_lflows);
     build_lswitch_lflows_pre_acl_and_acl(od, lsi->lflows,
-                                         lsi->meter_groups, NULL);
-    build_network_function(od, lsi->lflows, lsi->ls_port_groups, NULL);
-    build_fwd_group_lflows(od, lsi->lflows, NULL);
-    build_lswitch_lflows_admission_control(od, lsi->lflows, NULL);
-    build_lswitch_learn_fdb_od(od, lsi->lflows, NULL);
-    build_lswitch_arp_nd_responder_default(od, lsi->lflows, NULL);
+                                         lsi->meter_groups,
+                                         od->datapath_lflows);
+    build_network_function(od, lsi->lflows, lsi->ls_port_groups,
+                           od->datapath_lflows);
+    build_fwd_group_lflows(od, lsi->lflows, od->datapath_lflows);
+    build_lswitch_lflows_admission_control(od, lsi->lflows,
+                                           od->datapath_lflows);
+    build_lswitch_learn_fdb_od(od, lsi->lflows, od->datapath_lflows);
+    build_lswitch_arp_nd_responder_default(od, lsi->lflows,
+                                           od->datapath_lflows);
     build_lswitch_dns_lookup_and_response(od, lsi->lflows, lsi->meter_groups,
-                                          NULL);
-    build_lswitch_dhcp_and_dns_defaults(od, lsi->lflows, NULL);
+                                          od->datapath_lflows);
+    build_lswitch_dhcp_and_dns_defaults(od, lsi->lflows, od->datapath_lflows);
     build_lswitch_destination_lookup_bmcast(od, lsi->lflows, &lsi->actions,
-                                            lsi->meter_groups, NULL);
-    build_lswitch_output_port_sec_od(od, lsi->lflows, NULL);
+                                            lsi->meter_groups,
+                                            od->datapath_lflows);
+    build_lswitch_output_port_sec_od(od, lsi->lflows, od->datapath_lflows);
     /* CT extraction flows are built with stateful flows, but default rule is
      * always needed */
     ovn_lflow_add(lsi->lflows, od, S_SWITCH_IN_CT_EXTRACT, 0, "1", "next;",
-                  NULL);
-    build_lswitch_lb_affinity_default_flows(od, lsi->lflows, NULL);
+                  od->datapath_lflows);
+    build_lswitch_lb_affinity_default_flows(od, lsi->lflows,
+                                            od->datapath_lflows);
     if (od->has_evpn_vni) {
-        build_lswitch_lflows_evpn_l2_unknown(od, lsi->lflows, NULL);
+        build_lswitch_lflows_evpn_l2_unknown(od, lsi->lflows,
+                                             od->datapath_lflows);
     } else {
-        build_lswitch_lflows_l2_unknown(od, lsi->lflows, NULL);
+        build_lswitch_lflows_l2_unknown(od, lsi->lflows, od->datapath_lflows);
     }
-    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions, NULL);
+    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions,
+                              lsi->igmp_lflow_ref);
 }
 
 /* Helper function to combine all lflow generation which is iterated by
@@ -18959,7 +18971,8 @@ build_lswitch_and_lrouter_flows(
     const struct group_ecmp_route_data *route_data,
     struct hmap *route_policies,
     struct simap *route_tables,
-    const struct sbrec_acl_id_table *sbrec_acl_id_table)
+    const struct sbrec_acl_id_table *sbrec_acl_id_table,
+    struct lflow_ref *igmp_lflow_ref)
 {
 
     char *svc_check_match = xasprintf("eth.dst == %s", svc_monitor_mac);
@@ -19000,6 +19013,7 @@ build_lswitch_and_lrouter_flows(
             lsiv[index].route_tables = route_tables;
             lsiv[index].route_policies = route_policies;
             lsiv[index].sbrec_acl_id_table = sbrec_acl_id_table;
+            lsiv[index].igmp_lflow_ref = igmp_lflow_ref;
             ds_init(&lsiv[index].match);
             ds_init(&lsiv[index].actions);
 
@@ -19050,6 +19064,7 @@ build_lswitch_and_lrouter_flows(
             .match = DS_EMPTY_INITIALIZER,
             .actions = DS_EMPTY_INITIALIZER,
             .sbrec_acl_id_table = sbrec_acl_id_table,
+            .igmp_lflow_ref = igmp_lflow_ref,
         };
 
         /* Combined build - all lflow generation from lswitch and lrouter
@@ -19221,7 +19236,8 @@ void build_lflows(struct ovsdb_idl_txn *ovnsb_txn,
                                     input_data->route_data,
                                     input_data->route_policies,
                                     input_data->route_tables,
-                                    input_data->sbrec_acl_id_table);
+                                    input_data->sbrec_acl_id_table,
+                                    input_data->igmp_lflow_ref);
     build_igmp_lflows(input_data->igmp_groups,
                       &input_data->ls_datapaths->datapaths,
                       lflows, input_data->igmp_lflow_ref);
@@ -19338,6 +19354,59 @@ lflow_handle_northd_lr_changes(struct ovsdb_idl_txn *ovnsb_txn,
     }
     ds_destroy(&lsi.actions);
     ds_destroy(&lsi.match);
+    return handled;
+}
+
+bool
+lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
+                               struct tracked_dps *tracked_ls,
+                               struct lflow_input *lflow_input,
+                               struct lflow_table *lflows)
+{
+    struct hmapx_node *hmapx_node;
+    struct ovn_datapath *od;
+    bool handled = true;
+
+    HMAPX_FOR_EACH (hmapx_node, &tracked_ls->deleted) {
+        od = hmapx_node->data;
+        if (!lflow_ref_resync_flows(
+                    od->datapath_lflows, lflows, ovnsb_txn,
+                    lflow_input->ls_datapaths,
+                    lflow_input->lr_datapaths,
+                    lflow_input->ovn_internal_version_changed,
+                    lflow_input->sbrec_logical_flow_table,
+                    lflow_input->sbrec_logical_dp_group_table)) {
+            return false;
+        }
+    }
+
+    struct lswitch_flow_build_info lsi = {
+        .meter_groups = lflow_input->meter_groups,
+        .igmp_lflow_ref = lflow_input->igmp_lflow_ref,
+        .ls_port_groups = lflow_input->ls_port_groups,
+        .lflows = lflows,
+        .match = DS_EMPTY_INITIALIZER,
+        .actions = DS_EMPTY_INITIALIZER,
+    };
+
+    HMAPX_FOR_EACH (hmapx_node, &tracked_ls->crupdated) {
+        od = hmapx_node->data;
+        build_lswitch_and_lrouter_iterate_by_ls(od, &lsi);
+        handled = lflow_ref_sync_lflows(
+                    od->datapath_lflows, lflows, ovnsb_txn,
+                    lflow_input->ls_datapaths,
+                    lflow_input->lr_datapaths,
+                    lflow_input->ovn_internal_version_changed,
+                    lflow_input->sbrec_logical_flow_table,
+                    lflow_input->sbrec_logical_dp_group_table);
+         if (!handled) {
+           break;
+         }
+    }
+
+    ds_destroy(&lsi.actions);
+    ds_destroy(&lsi.match);
+
     return handled;
 }
 
@@ -19658,6 +19727,7 @@ exit:
 bool
 lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                 struct ls_stateful_tracked_data *trk_data,
+                                struct tracked_dps *tracked_ls,
                                 struct lflow_input *lflow_input,
                                 struct lflow_table *lflows)
 {
@@ -19700,13 +19770,28 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     HMAPX_FOR_EACH (hmapx_node, &trk_data->deleted) {
         struct ls_stateful_record *ls_stateful_rec = hmapx_node->data;
-        const struct ovn_datapath *od =
-            ovn_datapaths_find_by_index(lflow_input->ls_datapaths,
-                                        ls_stateful_rec->ls_index);
-        ovs_assert(od->nbs && uuid_equals(&od->nbs->header_.uuid,
-                                          &ls_stateful_rec->nbs_uuid));
-
-        lflow_ref_unlink_lflows(ls_stateful_rec->lflow_ref);
+        const struct ovn_datapath *od = NULL;
+        struct hmapx_node *n;
+        HMAPX_FOR_EACH (n, &tracked_ls->deleted) {
+           const struct ovn_datapath *iter = n->data;
+           if (iter->index == ls_stateful_rec->ls_index) {
+               od = iter;
+               break;
+           }
+        }
+        if (od) {
+            ovs_assert(od->nbs && uuid_equals(&od->nbs->header_.uuid,
+                                              &ls_stateful_rec->nbs_uuid));
+            if (!lflow_ref_resync_flows(
+                        ls_stateful_rec->lflow_ref, lflows, ovnsb_txn,
+                        lflow_input->ls_datapaths,
+                        lflow_input->lr_datapaths,
+                        lflow_input->ovn_internal_version_changed,
+                        lflow_input->sbrec_logical_flow_table,
+                        lflow_input->sbrec_logical_dp_group_table)) {
+                return false;
+            }
+        }
     }
 
     return true;
