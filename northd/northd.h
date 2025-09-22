@@ -459,6 +459,8 @@ struct ovn_datapath {
     /* Map of ovn_port objects belonging to this datapath.
      * This map doesn't include derived ports. */
     struct hmap ports;
+    /* Reference to the switch/router lflows beloining to this datapath */
+    struct lflow_ref *ref_lflows;
 };
 
 const struct ovn_datapath *ovn_datapath_find(const struct hmap *datapaths,
@@ -917,6 +919,10 @@ void build_route_data_flows_for_lrouter(
     const struct sset *bfd_ports);
 
 
+bool lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
+                                    struct tracked_dps *,
+                                    struct lflow_input *,
+                                    struct lflow_table *lflows);
 bool lflow_handle_northd_port_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                       struct tracked_ovn_ports *,
                                       struct lflow_input *,
@@ -931,6 +937,7 @@ bool lflow_handle_lr_stateful_changes(struct ovsdb_idl_txn *,
                                       struct lflow_table *lflows);
 bool lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *,
                                       struct ls_stateful_tracked_data *,
+                                      struct tracked_dps *,
                                       struct lflow_input *,
                                       struct lflow_table *lflows);
 bool northd_handle_sb_port_binding_changes(

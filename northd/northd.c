@@ -540,6 +540,7 @@ ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
     od->ipam_info_initialized = false;
     od->tunnel_key = sdp->sb_dp->tunnel_key;
     init_mcast_info_for_datapath(od);
+    od->ref_lflows = lflow_ref_create();
     return od;
 }
 
@@ -568,6 +569,7 @@ ovn_datapath_destroy(struct ovn_datapath *od)
         destroy_mcast_info_for_datapath(od);
         destroy_ports_for_datapath(od);
         sset_destroy(&od->router_ips);
+        lflow_ref_destroy(od->ref_lflows);
         free(od);
     }
 }
@@ -5511,10 +5513,13 @@ enum mirror_filter {
 
 static void
 build_mirror_default_lflow(struct ovn_datapath *od,
-                           struct lflow_table *lflows)
+                           struct lflow_table *lflows,
+                           struct lflow_ref *lflow_ref)
 {
-    ovn_lflow_add(lflows, od, S_SWITCH_IN_MIRROR, 0, "1", "next;", NULL);
-    ovn_lflow_add(lflows, od, S_SWITCH_OUT_MIRROR, 0, "1", "next;", NULL);
+    ovn_lflow_add(lflows, od, S_SWITCH_IN_MIRROR, 0, "1", "next;",
+                  lflow_ref);
+    ovn_lflow_add(lflows, od, S_SWITCH_OUT_MIRROR, 0, "1", "next;",
+                  lflow_ref);
 }
 
 static void
@@ -17695,31 +17700,31 @@ build_lswitch_and_lrouter_iterate_by_ls(struct ovn_datapath *od,
                                         struct lswitch_flow_build_info *lsi)
 {
     ovs_assert(od->nbs);
-    build_mirror_default_lflow(od, lsi->lflows);
+    build_mirror_default_lflow(od, lsi->lflows, od->ref_lflows);
     build_lswitch_lflows_pre_acl_and_acl(od, lsi->lflows,
-                                         lsi->meter_groups, NULL);
+                                         lsi->meter_groups, od->ref_lflows);
 
-    build_fwd_group_lflows(od, lsi->lflows, NULL);
-    build_lswitch_lflows_admission_control(od, lsi->lflows, NULL);
-    build_lswitch_learn_fdb_od(od, lsi->lflows, NULL);
-    build_lswitch_arp_nd_responder_default(od, lsi->lflows, NULL);
+    build_fwd_group_lflows(od, lsi->lflows, od->ref_lflows);
+    build_lswitch_lflows_admission_control(od, lsi->lflows, od->ref_lflows);
+    build_lswitch_learn_fdb_od(od, lsi->lflows, od->ref_lflows);
+    build_lswitch_arp_nd_responder_default(od, lsi->lflows, od->ref_lflows);
     build_lswitch_dns_lookup_and_response(od, lsi->lflows, lsi->meter_groups,
-                                          NULL);
-    build_lswitch_dhcp_and_dns_defaults(od, lsi->lflows, NULL);
+                                          od->ref_lflows);
+    build_lswitch_dhcp_and_dns_defaults(od, lsi->lflows, od->ref_lflows);
     build_lswitch_destination_lookup_bmcast(od, lsi->lflows, &lsi->actions,
-                                            lsi->meter_groups, NULL);
-    build_lswitch_output_port_sec_od(od, lsi->lflows, NULL);
+                                            lsi->meter_groups, od->ref_lflows);
+    build_lswitch_output_port_sec_od(od, lsi->lflows, od->ref_lflows);
     /* CT extraction flows are built with stateful flows, but default rule is
      * always needed */
     ovn_lflow_add(lsi->lflows, od, S_SWITCH_IN_CT_EXTRACT, 0, "1", "next;",
-                  NULL);
-    build_lswitch_lb_affinity_default_flows(od, lsi->lflows, NULL);
+                  od->ref_lflows);
+    build_lswitch_lb_affinity_default_flows(od, lsi->lflows, od->ref_lflows);
     if (od->has_evpn_vni) {
-        build_lswitch_lflows_evpn_l2_unknown(od, lsi->lflows, NULL);
+        build_lswitch_lflows_evpn_l2_unknown(od, lsi->lflows, od->ref_lflows);
     } else {
-        build_lswitch_lflows_l2_unknown(od, lsi->lflows, NULL);
+        build_lswitch_lflows_l2_unknown(od, lsi->lflows, od->ref_lflows);
     }
-    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions, NULL);
+    build_mcast_flood_lswitch(od, lsi->lflows, &lsi->actions, od->ref_lflows);
 }
 
 /* Helper function to combine all lflow generation which is iterated by
@@ -18384,6 +18389,58 @@ lflow_reset_northd_refs(struct lflow_input *lflow_input)
 }
 
 bool
+lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
+                               struct tracked_dps *tracked_ls,
+                               struct lflow_input *lflow_input,
+                               struct lflow_table *lflows)
+{
+    struct hmapx_node *hmapx_node;
+    struct ovn_datapath *od;
+    bool handled = true;
+
+    HMAPX_FOR_EACH (hmapx_node, &tracked_ls->deleted) {
+        od = hmapx_node->data;
+        lflow_ref_unlink_lflows(od->ref_lflows);
+        if (!lflow_ref_sync_lflows(
+                    od->ref_lflows, lflows, ovnsb_txn,
+                    lflow_input->ls_datapaths,
+                    lflow_input->lr_datapaths,
+                    lflow_input->ovn_internal_version_changed,
+                    lflow_input->sbrec_logical_flow_table,
+                    lflow_input->sbrec_logical_dp_group_table)) {
+            return false;
+        }
+    }
+
+    struct lswitch_flow_build_info lsi = {
+        .meter_groups = lflow_input->meter_groups,
+        .lflows = lflows,
+        .match = DS_EMPTY_INITIALIZER,
+        .actions = DS_EMPTY_INITIALIZER,
+    };
+
+    HMAPX_FOR_EACH (hmapx_node, &tracked_ls->crupdated) {
+        od = hmapx_node->data;
+        build_lswitch_and_lrouter_iterate_by_ls(od, &lsi);
+        handled = lflow_ref_sync_lflows(
+                    od->ref_lflows, lflows, ovnsb_txn,
+                    lflow_input->ls_datapaths,
+                    lflow_input->lr_datapaths,
+                    lflow_input->ovn_internal_version_changed,
+                    lflow_input->sbrec_logical_flow_table,
+                    lflow_input->sbrec_logical_dp_group_table);
+         if (!handled) {
+           break;
+         }
+    }
+
+    ds_destroy(&lsi.actions);
+    ds_destroy(&lsi.match);
+
+    return handled;
+}
+
+bool
 lflow_handle_northd_port_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                  struct tracked_ovn_ports *trk_lsps,
                                  struct lflow_input *lflow_input,
@@ -18693,9 +18750,32 @@ exit:
     return handled;
 }
 
+static const struct ovn_datapath *
+ovn_datapaths_find_by_lsf_rec_index(
+        const struct ovn_datapaths *ovn_datapaths,
+        struct tracked_dps *tracked_ls, size_t od_index)
+{
+    const struct ovn_datapath *od =
+        ovn_datapaths_find_by_index(ovn_datapaths, od_index);
+    if (od) {
+        return od;
+    }
+
+    struct hmapx_node *hmapx_node;
+    HMAPX_FOR_EACH (hmapx_node, &tracked_ls->deleted) {
+        od = hmapx_node->data;
+        if (od->index == od_index) {
+            return od;
+        }
+    }
+
+    return NULL;
+}
+
 bool
 lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                 struct ls_stateful_tracked_data *trk_data,
+                                struct tracked_dps *tracked_ls,
                                 struct lflow_input *lflow_input,
                                 struct lflow_table *lflows)
 {
@@ -18736,12 +18816,23 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
     HMAPX_FOR_EACH (hmapx_node, &trk_data->deleted) {
         struct ls_stateful_record *ls_stateful_rec = hmapx_node->data;
         const struct ovn_datapath *od =
-            ovn_datapaths_find_by_index(lflow_input->ls_datapaths,
-                                        ls_stateful_rec->ls_index);
-        ovs_assert(od->nbs && uuid_equals(&od->nbs->header_.uuid,
-                                          &ls_stateful_rec->nbs_uuid));
-
-        lflow_ref_unlink_lflows(ls_stateful_rec->lflow_ref);
+            ovn_datapaths_find_by_lsf_rec_index(lflow_input->ls_datapaths,
+                                                tracked_ls,
+                                                ls_stateful_rec->ls_index);
+        if (od) {
+            ovs_assert(od->nbs && uuid_equals(&od->nbs->header_.uuid,
+                       &ls_stateful_rec->nbs_uuid));
+            lflow_ref_unlink_lflows(ls_stateful_rec->lflow_ref);
+            if (!lflow_ref_sync_lflows(
+                        ls_stateful_rec->lflow_ref, lflows, ovnsb_txn,
+                        lflow_input->ls_datapaths,
+                        lflow_input->lr_datapaths,
+                        lflow_input->ovn_internal_version_changed,
+                        lflow_input->sbrec_logical_flow_table,
+                        lflow_input->sbrec_logical_dp_group_table)) {
+                return false;
+            }
+        }
     }
 
     return true;
