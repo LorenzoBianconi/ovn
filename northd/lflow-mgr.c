@@ -745,6 +745,10 @@ lflow_table_add_lflow(struct lflow_table *lflow_table,
             hmap_insert(&lflow_ref->lflow_ref_nodes, &lrn->ref_node, hash);
         }
 
+        if (lrn->dpgrp_lflow) {
+            dynamic_bitmap_realloc(&lrn->dpgrp_bitmap, dp_bitmap_len);
+        }
+
         if (!lrn->linked) {
             if (lrn->dpgrp_lflow) {
                 ovs_assert(lrn->dpgrp_bitmap.capacity == dp_bitmap_len);
@@ -1277,7 +1281,9 @@ ovn_sb_insert_or_update_logical_dp_group(
     BITMAP_FOR_EACH_1 (index, ods_size(datapaths), dpg_bitmap) {
         struct ovn_datapath *od = vector_get(&datapaths->dps, index,
                                              struct ovn_datapath *);
-        sb[n++] = od->sdp->sb_dp;
+        if (od) {
+            sb[n++] = od->sdp->sb_dp;
+        }
     }
     if (!dp_group) {
         struct uuid dpg_uuid = uuid_random();
