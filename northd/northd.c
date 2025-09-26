@@ -6589,7 +6589,6 @@ build_acl_sample_new_flows(const struct ovn_datapath *od,
     ds_clear(actions);
     ds_clear(match);
 
-    ds_put_cstr(match, REGBIT_PKT_SAMPLED" == 0 && ");
     /* Match on new connections.  However, for stateful to-lport ACLs, due to
      * skip_port_from_conntrack() conntrack state might be cleared, so
      * take that into account too. */
@@ -6722,7 +6721,7 @@ build_acl_sample_generic_new_flows(const struct ovn_datapath *od,
     /* Match on new connections.  However, for stateful to-lport ACLs, due to
      * skip_port_from_conntrack() conntrack state might be cleared, so
      * take that into account too. */
-    const char *new_conn_match = REGBIT_PKT_SAMPLED" == 0 && ip";
+    const char *new_conn_match = "ip";
     if (stateful) {
         if (stage != S_SWITCH_OUT_ACL_SAMPLE) {
             new_conn_match = "ip && ct.new";
