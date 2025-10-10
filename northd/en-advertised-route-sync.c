@@ -834,3 +834,290 @@ advertised_route_table_sync(
     hmap_destroy(&sync_routes);
 }
 
+struct advertised_mac_binding {
+    struct hmap_node hmap_node;
+
+    const struct sbrec_port_binding *sb;
+    const struct sbrec_datapath_binding *dp;
+
+    char *ip;
+    char *mac;
+};
+
+static bool
+evpn_ip_redistribution_enabled(const struct ovn_datapath *od)
+{
+    if (!od->has_evpn_vni) {
+        return false;
+    }
+
+    const char *redistribute = smap_get(&od->nbs->other_config,
+                                        "dynamic-routing-redistribute");
+    return redistribute && !strcmp(redistribute, "ip");
+}
+
+static uint32_t
+advertised_mac_binding_get_hash(const struct sbrec_port_binding *sb,
+                                const struct sbrec_datapath_binding *dp,
+                                const char *ip, const char *mac)
+{
+    uint32_t hash = uuid_hash(&dp->header_.uuid);
+    hash = hash_string(sb->logical_port, hash);
+    hash = hash_string(ip, hash);
+    hash = hash_string(mac, hash);
+
+    return hash;
+}
+
+static struct advertised_mac_binding *
+advertised_mac_binding_entry_find(struct hmap *map,
+                                  const struct sbrec_port_binding *sb,
+                                  const struct sbrec_datapath_binding *dp,
+                                  const char *ip, const char *mac)
+{
+    uint32_t hash = advertised_mac_binding_get_hash(sb, dp, ip, mac);
+    struct advertised_mac_binding *e;
+    HMAP_FOR_EACH_WITH_HASH (e, hmap_node, hash, map) {
+        if (uuid_equals(&sb->header_.uuid, &e->sb->header_.uuid) &&
+            uuid_equals(&dp->header_.uuid, &e->dp->header_.uuid) &&
+            !strcmp(e->ip, ip) && !strcmp(e->mac, mac)) {
+            return e;
+        }
+    }
+
+    return NULL;
+}
+
+static void
+advertised_mac_binding_entry_add(struct hmap *map,
+                                 const struct sbrec_port_binding *sb,
+                                 const struct sbrec_datapath_binding *dp,
+                                 const char *ip, const char *mac)
+{
+    struct advertised_mac_binding *e = xmalloc(sizeof *e);
+    e->ip = xstrdup(ip);
+    e->mac = xstrdup(mac);
+    e->sb = sb;
+    e->dp = dp;
+
+    uint32_t hash = advertised_mac_binding_get_hash(sb, dp, ip, mac);
+    hmap_insert(map, &e->hmap_node, hash);
+}
+
+static void
+advertised_mac_binding_entry_destroy(struct advertised_mac_binding *e)
+{
+    free(e->ip);
+    free(e->mac);
+    free(e);
+}
+
+static void
+advertised_mac_binding_add(struct hmap *map,
+                           const struct sbrec_port_binding *sb,
+                           const struct sbrec_datapath_binding *dp,
+                           struct lport_addresses *addr)
+{
+    if (!addr) {
+        return;
+    }
+
+    for (size_t i = 0; i < addr->n_ipv4_addrs; i++) {
+        if (!advertised_mac_binding_entry_find(map, sb, dp,
+                                               addr->ipv4_addrs[i].addr_s,
+                                               addr->ea_s)) {
+            advertised_mac_binding_entry_add(map, sb, dp,
+                                             addr->ipv4_addrs[i].addr_s,
+                                             addr->ea_s);
+        }
+    }
+
+    for (size_t i = 0; i < addr->n_ipv6_addrs; i++) {
+        if (prefix_is_link_local(&addr->ipv6_addrs[i].addr, 128)) {
+            continue;
+        }
+
+        if (!advertised_mac_binding_entry_find(map, sb, dp,
+                                               addr->ipv6_addrs[i].addr_s,
+                                               addr->ea_s)) {
+            advertised_mac_binding_entry_add(map, sb, dp,
+                                             addr->ipv6_addrs[i].addr_s,
+                                             addr->ea_s);
+        }
+    }
+}
+
+static void
+build_advertised_mac_binding(const struct ovn_datapath *od, struct hmap *map)
+{
+    ovs_assert(od->nbs);
+
+    if (!evpn_ip_redistribution_enabled(od)) {
+        return;
+    }
+
+    struct ovn_port *op;
+    HMAP_FOR_EACH (op, dp_node, &od->ports) {
+        if (!op->sb) {
+            continue;
+        }
+
+        if (lsp_is_router(op->nbsp) && op->peer) {
+            advertised_mac_binding_add(map, op->sb, od->sdp->sb_dp,
+                                       &op->peer->lrp_networks);
+        }
+
+        if (!strcmp(op->nbsp->type, "")) { /* LSP */
+            advertised_mac_binding_add(map, op->sb, od->sdp->sb_dp,
+                                       op->lsp_addrs);
+        }
+    }
+}
+
+void *
+en_advertised_mac_binding_sync_init(struct engine_node *node OVS_UNUSED,
+                                    struct engine_arg *arg OVS_UNUSED)
+{
+    return NULL;
+}
+
+enum engine_node_state
+en_advertised_mac_binding_sync_run(struct engine_node *node,
+                                   void *data OVS_UNUSED)
+{
+    struct northd_data *northd_data = engine_get_input_data("northd", node);
+    const struct sbrec_advertised_mac_binding_table *sbrec_adv_mb_table =
+        EN_OVSDB_GET(engine_get_input("SB_advertised_mac_binding", node));
+    const struct engine_context *eng_ctx = engine_get_context();
+
+    struct hmap advertised_mac_binding_map =
+        HMAP_INITIALIZER(&advertised_mac_binding_map);
+
+    struct ovn_datapath *od;
+    HMAP_FOR_EACH (od, key_node, &northd_data->ls_datapaths.datapaths) {
+        build_advertised_mac_binding(od, &advertised_mac_binding_map);
+    }
+
+    struct advertised_mac_binding *e;
+    const struct sbrec_advertised_mac_binding *sb_adv_mb;
+    SBREC_ADVERTISED_MAC_BINDING_TABLE_FOR_EACH_SAFE (sb_adv_mb,
+                                          sbrec_adv_mb_table) {
+        e = advertised_mac_binding_entry_find(&advertised_mac_binding_map,
+                                              sb_adv_mb->logical_port,
+                                              sb_adv_mb->datapath,
+                                              sb_adv_mb->ip, sb_adv_mb->mac);
+        if (!e) {
+            sbrec_advertised_mac_binding_delete(sb_adv_mb);
+        } else {
+            hmap_remove(&advertised_mac_binding_map, &e->hmap_node);
+            advertised_mac_binding_entry_destroy(e);
+        }
+    }
+
+    HMAP_FOR_EACH_POP (e, hmap_node, &advertised_mac_binding_map) {
+        sb_adv_mb =
+            sbrec_advertised_mac_binding_insert(eng_ctx->ovnsb_idl_txn);
+        sbrec_advertised_mac_binding_set_datapath(sb_adv_mb, e->sb->datapath);
+        sbrec_advertised_mac_binding_set_logical_port(sb_adv_mb, e->sb);
+        sbrec_advertised_mac_binding_set_ip(sb_adv_mb, e->ip);
+        sbrec_advertised_mac_binding_set_mac(sb_adv_mb, e->mac);
+        advertised_mac_binding_entry_destroy(e);
+    }
+
+    hmap_destroy(&advertised_mac_binding_map);
+
+    return EN_UPDATED;
+}
+
+void
+en_advertised_mac_binding_sync_cleanup(void *data OVS_UNUSED)
+{
+}
+
+enum engine_input_handler_result
+advertised_mac_binding_sync_northd_handler(struct engine_node *node,
+                                           void *data OVS_UNUSED)
+{
+    struct northd_data *northd_data = engine_get_input_data("northd", node);
+    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+        return EN_UNHANDLED;
+    }
+
+    struct northd_tracked_data *nd_changes = &northd_data->trk_data;
+
+    struct hmapx_node *n;
+    HMAPX_FOR_EACH (n, &nd_changes->trk_switches.crupdated) {
+        const struct ovn_datapath *od = n->data;
+        if (evpn_ip_redistribution_enabled(od)) {
+            return EN_UNHANDLED;
+        }
+    }
+    HMAPX_FOR_EACH (n, &nd_changes->trk_switches.deleted) {
+        const struct ovn_datapath *od = n->data;
+        if (evpn_ip_redistribution_enabled(od)) {
+            return EN_UNHANDLED;
+        }
+    }
+
+    HMAPX_FOR_EACH (n, &nd_changes->trk_routers.crupdated) {
+        const struct ovn_datapath *od = n->data;
+        struct ovn_port *op;
+        HMAP_FOR_EACH (op, dp_node, &od->ports) {
+            struct ovn_port *peer = op->peer;
+            if (peer && peer->od && peer->od->nbs &&
+                evpn_ip_redistribution_enabled(peer->od)) {
+                return EN_UNHANDLED;
+            }
+        }
+    }
+    HMAPX_FOR_EACH (n, &nd_changes->trk_routers.deleted) {
+        const struct ovn_datapath *od = n->data;
+        struct ovn_port *op;
+        HMAP_FOR_EACH (op, dp_node, &od->ports) {
+            struct ovn_port *peer = op->peer;
+            if (peer && peer->od && peer->od->nbs &&
+                evpn_ip_redistribution_enabled(peer->od)) {
+                return EN_UNHANDLED;
+            }
+        }
+    }
+
+    return EN_HANDLED_UNCHANGED;
+}
+
+enum engine_input_handler_result
+advertised_mac_binding_sync_sb_port_binding_handler(struct engine_node *node,
+                                                    void *data OVS_UNUSED)
+{
+    const struct sbrec_port_binding_table *sbrec_port_binding_table =
+        EN_OVSDB_GET(engine_get_input("SB_port_binding", node));
+    struct northd_data *northd_data = engine_get_input_data("northd", node);
+
+    const struct sbrec_port_binding *pb;
+    SBREC_PORT_BINDING_TABLE_FOR_EACH_TRACKED (pb, sbrec_port_binding_table) {
+        bool is_lrp = !strcmp(datapath_get_nb_type(pb->datapath),
+                              ovn_datapath_type_to_string(DP_ROUTER));
+        struct hmap *ports = is_lrp ? &northd_data->lr_ports
+                                    : &northd_data->ls_ports;
+        struct ovn_port *op = ovn_port_find(ports, pb->logical_port);
+        if (!op) {
+            continue;
+        }
+
+        struct ovn_datapath *od = op->od;
+        if (is_lrp) {
+            struct ovn_port *peer = op->peer;
+            if (!peer || !peer->od || !peer->od->nbs) {
+                continue;
+            }
+            od = peer->od;
+        }
+
+        if (evpn_ip_redistribution_enabled(od)) {
+            return EN_UNHANDLED;
+        }
+    }
+
+    return EN_HANDLED_UNCHANGED;
+}
+
