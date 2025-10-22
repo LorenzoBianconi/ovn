@@ -4109,7 +4109,7 @@ check_engine_stats northd recompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
-check_engine_stats northd_output recompute nocompute
+check_engine_stats northd_output norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
@@ -4125,7 +4125,7 @@ check_engine_stats northd recompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
-check_engine_stats northd_output recompute nocompute
+check_engine_stats northd_output norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
@@ -4137,7 +4137,7 @@ check_engine_stats northd recompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats route_policies recompute nocompute
 check_engine_stats lflow recompute nocompute
-check_engine_stats northd_output recompute nocompute
+check_engine_stats northd_output norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
@@ -4172,7 +4172,7 @@ check_engine_stats northd recompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
-check_engine_stats northd_output recompute compute
+check_engine_stats northd_output norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
@@ -4187,7 +4187,7 @@ check_engine_stats northd recompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats route_policies recompute nocompute
 check_engine_stats lflow recompute nocompute
-check_engine_stats northd_output recompute compute
+check_engine_stats northd_output norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 

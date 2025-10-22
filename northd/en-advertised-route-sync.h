@@ -48,9 +48,4 @@ void *en_advertised_mac_binding_sync_init(struct engine_node *,
 void en_advertised_mac_binding_sync_cleanup(void *data);
 enum engine_node_state
 en_advertised_mac_binding_sync_run(struct engine_node *, void *data);
-enum engine_input_handler_result
-advertised_mac_binding_sync_northd_handler(struct engine_node *, void *data);
-enum engine_input_handler_result
-advertised_mac_binding_sync_sb_port_binding_handler(struct engine_node *,
-                                                    void *data);
 #endif /* EN_ADVERTISED_ROUTE_SYNC_H */

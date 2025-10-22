@@ -357,12 +357,12 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_advertised_route_sync, &en_northd,
                      advertised_route_sync_northd_change_handler);
 
-    engine_add_input(&en_advertised_mac_binding_sync,
-                     &en_sb_advertised_mac_binding, NULL);
     engine_add_input(&en_advertised_mac_binding_sync, &en_sb_port_binding,
-                     advertised_mac_binding_sync_sb_port_binding_handler);
+                     NULL);
+    engine_add_input(&en_advertised_mac_binding_sync,
+                     &en_sb_advertised_mac_binding, engine_noop_handler);
     engine_add_input(&en_advertised_mac_binding_sync, &en_northd,
-                     advertised_mac_binding_sync_northd_handler);
+                     engine_noop_handler);
 
     engine_add_input(&en_learned_route_sync, &en_sb_learned_route,
                      learned_route_sync_sb_learned_route_change_handler);
