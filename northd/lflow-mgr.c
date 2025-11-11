@@ -1242,8 +1242,8 @@ ovn_dp_group_find(const struct hmap *dp_groups,
     struct ovn_dp_group *dpg;
 
     HMAP_FOR_EACH_WITH_HASH (dpg, node, hash, dp_groups) {
-        if (bitmap_equal(dpg->bitmap, dpg_bitmap,
-                         MIN(bitmap_len, dpg->bitmap_len))) {
+        //if (bitmap_equal(dpg->bitmap, dpg_bitmap, MIN(bitmap_len, dpg->bitmap_len))) {
+        if (bitmap_equal(dpg->bitmap, dpg_bitmap, bitmap_len)) {
             return dpg;
         }
     }
