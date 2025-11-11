@@ -174,6 +174,7 @@ struct ovn_lflow {
 
     struct ovn_datapath *od;     /* 'logical_datapath' in SB schema.  */
     unsigned long *dpg_bitmap;   /* Bitmap of all datapaths by their 'index'.*/
+    size_t dpg_bitmap_len;
     enum ovn_stage stage;
     uint16_t priority;
     char *match;
@@ -899,6 +900,7 @@ ovn_lflow_init(struct ovn_lflow *lflow, struct ovn_datapath *od,
                const char *flow_desc, struct uuid sbuuid)
 {
     lflow->dpg_bitmap = bitmap_allocate(dp_bitmap_len);
+    lflow->dpg_bitmap_len = dp_bitmap_len;
     lflow->od = od;
     lflow->stage = stage;
     lflow->priority = priority;
@@ -1014,7 +1016,8 @@ do_ovn_lflow_add(struct lflow_table *lflow_table, size_t dp_bitmap_len,
     old_lflow = ovn_lflow_find(&lflow_table->entries, stage,
                                priority, match, actions, ctrl_meter, hash);
     if (old_lflow) {
-        if (old_lflow->sync_state != LFLOW_STALE) {
+        if (old_lflow->sync_state != LFLOW_STALE &&
+            old_lflow->dpg_bitmap_len >= dp_bitmap_len) {
             return old_lflow;
         }
         sbuuid = old_lflow->sb_uuid;
@@ -1239,7 +1242,8 @@ ovn_dp_group_find(const struct hmap *dp_groups,
     struct ovn_dp_group *dpg;
 
     HMAP_FOR_EACH_WITH_HASH (dpg, node, hash, dp_groups) {
-        if (bitmap_equal(dpg->bitmap, dpg_bitmap, bitmap_len)) {
+        if (bitmap_equal(dpg->bitmap, dpg_bitmap,
+                         MIN(bitmap_len, dpg->bitmap_len))) {
             return dpg;
         }
     }

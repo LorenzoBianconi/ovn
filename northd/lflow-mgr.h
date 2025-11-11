@@ -160,6 +160,7 @@ struct sbrec_logical_dp_group;
 
 struct ovn_dp_group {
     unsigned long *bitmap;
+    size_t bitmap_len;
     const struct sbrec_logical_dp_group *dp_group;
     struct uuid dpg_uuid;
     struct hmap_node node;
