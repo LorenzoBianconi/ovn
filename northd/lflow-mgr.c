@@ -900,7 +900,7 @@ ovn_lflow_init(struct ovn_lflow *lflow, struct ovn_datapath *od,
                const char *flow_desc, struct uuid sbuuid)
 {
     lflow->dpg_bitmap = bitmap_allocate(dp_bitmap_len);
-    lflow->dpg_bitmap_len = dp_bitmap_len;
+    lflow->dpg_bitmap_len = bitmap_n_bytes(dp_bitmap_len);
     lflow->od = od;
     lflow->stage = stage;
     lflow->priority = priority;
