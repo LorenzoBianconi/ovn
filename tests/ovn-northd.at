@@ -2935,6 +2935,8 @@ OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check VXLAN mode disabling])
 ovn_start
 
+OVS_CTL_TIMEOUT=120
+
 # Create a fake chassis with vxlan encap to implicitly enable VXLAN mode.
 check_uuid ovn-sbctl \
     --id=@e create encap chassis_name=hv1 ip="192.168.0.1" type="vxlan" \
@@ -2968,6 +2970,8 @@ AT_CLEANUP
 OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check datapath tunnel ids exhaustion])
 ovn_start
+
+OVS_CTL_TIMEOUT=120
 
 # Create a fake chassis with vxlan encap to lower MAX DP tunnel key to 2^12
 check_uuid ovn-sbctl \
@@ -3029,6 +3033,8 @@ AT_CLEANUP
 OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check LS/LR single line configuration])
 ovn_start
+
+OVS_CTL_TIMEOUT=120
 
 cmd=""
 for i in {1..2048..1}; do
