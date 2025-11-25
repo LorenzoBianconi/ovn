@@ -3061,8 +3061,6 @@ OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check LS/LR single line configuration])
 ovn_start
 
-OVS_CTL_TIMEOUT=120
-
 cmd=""
 for i in {1..2048..1}; do
     cmd="${cmd} -- ls-add lsw-${i}"
