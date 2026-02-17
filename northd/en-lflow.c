@@ -221,7 +221,6 @@ lflow_ls_stateful_handler(struct engine_node *node, void *data)
         return EN_UNHANDLED;
     }
 
-    struct northd_data *northd_data = engine_get_input_data("northd", node);
     const struct engine_context *eng_ctx = engine_get_context();
     struct lflow_data *lflow_data = data;
     struct lflow_input lflow_input;
@@ -229,7 +228,6 @@ lflow_ls_stateful_handler(struct engine_node *node, void *data)
     lflow_get_input_data(node, &lflow_input);
     if (!lflow_handle_ls_stateful_changes(eng_ctx->ovnsb_idl_txn,
                                           &ls_sful_data->trk_data,
-                                          &northd_data->trk_data.trk_switches,
                                           &lflow_input,
                                           lflow_data->lflow_table)) {
         return EN_UNHANDLED;

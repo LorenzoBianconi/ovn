@@ -19893,9 +19893,7 @@ lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
     HMAPX_FOR_EACH (hmapx_node, &tracked_ls->deleted) {
         od = hmapx_node->data;
         if (!lflow_ref_resync_flows(
-                    od->datapath_lflows, lflows, ovnsb_txn,
-                    lflow_input->ls_datapaths,
-                    lflow_input->lr_datapaths,
+                    od->datapath_lflows, lflows, ovnsb_txn, lflow_input->dps,
                     lflow_input->ovn_internal_version_changed,
                     lflow_input->sbrec_logical_flow_table,
                     lflow_input->sbrec_logical_dp_group_table)) {
@@ -19923,9 +19921,7 @@ lflow_handle_northd_ls_changes(struct ovsdb_idl_txn *ovnsb_txn,
     HMAPX_FOR_EACH (hmapx_node, &tracked_ls->crupdated) {
         od = hmapx_node->data;
         if (!lflow_ref_sync_lflows(
-                    od->datapath_lflows, lflows, ovnsb_txn,
-                    lflow_input->ls_datapaths,
-                    lflow_input->lr_datapaths,
+                    od->datapath_lflows, lflows, ovnsb_txn, lflow_input->dps,
                     lflow_input->ovn_internal_version_changed,
                     lflow_input->sbrec_logical_flow_table,
                     lflow_input->sbrec_logical_dp_group_table)) {
@@ -20246,7 +20242,6 @@ exit:
 bool
 lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                 struct ls_stateful_tracked_data *trk_data,
-                                struct tracked_dps *tracked_ls,
                                 struct lflow_input *lflow_input,
                                 struct lflow_table *lflows)
 {

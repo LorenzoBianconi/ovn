@@ -971,7 +971,6 @@ bool lflow_handle_lr_stateful_changes(struct ovsdb_idl_txn *,
                                       struct lflow_table *lflows);
 bool lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *,
                                       struct ls_stateful_tracked_data *,
-                                      struct tracked_dps *,
                                       struct lflow_input *,
                                       struct lflow_table *lflows);
 bool lflow_handle_ls_arp_changes(struct ovsdb_idl_txn *,
