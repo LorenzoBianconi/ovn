@@ -7111,6 +7111,14 @@ ovsdb_idl_loop_next_cfg_inc(struct ovsdb_idl_loop *idl_loop)
     }
 }
 
+static void
+ovsdb_idl_connection_notifier(void *idl_)
+{
+    struct ovsdb_idl *idl = idl_;
+
+    update_sb_monitors(idl, NULL, NULL, NULL, NULL, false);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -7182,6 +7190,8 @@ main(int argc, char *argv[])
     /* Configure OVN SB database. */
     struct ovsdb_idl_loop ovnsb_idl_loop = OVSDB_IDL_LOOP_INITIALIZER(
         ovsdb_idl_create_unconnected(&sbrec_idl_class, true));
+    ovsdb_idl_set_notifier(ovnsb_idl_loop.idl, ovsdb_idl_connection_notifier);
+
     ovsdb_idl_set_leader_only(ovnsb_idl_loop.idl, false);
 
     unixctl_command_register("connection-status", "", 0, 0,
