@@ -40760,6 +40760,10 @@ garp_nat=$(fmt_pkt "Ether(dst='ff:ff:ff:ff:ff:ff', src='00:00:00:00:00:11')/ \
                     ARP(hwsrc='00:00:00:00:00:11', psrc='192.168.1.10', pdst='192.168.1.10')")
 # GARP packet for vif
 echo $garp_vif > expected
+
+ovn-nbctl list Logical_Router > LR0
+ovn-sbctl list datapath_binding > DP0
+
 OVN_CHECK_PACKETS_UNIQ([hv1/snoopvif-tx.pcap], [expected])
 $PYTHON "$ovs_srcdir/utilities/ovs-pcap.in" hv1/snoopvif-tx.pcap > hv1/snoopvif-tx.packets
 AT_CHECK([grep -q "$garp_lrp" hv1/snoopvif-tx.packets], [1])
@@ -40768,6 +40772,9 @@ AT_CHECK([grep -q "$garp_lrp" hv1/snoopvif-tx.packets], [1])
 echo $garp_lrp >> expected
 echo $garp_nat >> expected
 check ovn-nbctl --wait=hv set Logical_Router lr1 options:disable_garp_rarp="false"
+ovn-nbctl list Logical_Router > LR1
+ovn-sbctl list datapath_binding > DP1
+
 OVN_CHECK_PACKETS_UNIQ([hv1/snoopvif-tx.pcap], [expected])
 
 # Check for GW router
@@ -40775,6 +40782,9 @@ check ovn-nbctl lrp-del-gateway-chassis lrp1 hv1
 check ovn-nbctl set Logical_Router lr1 options:chassis="hv1"
 check ovn-nbctl set Logical_Router lr1 options:disable_garp_rarp="true"
 check ovn-nbctl --wait=hv sync
+
+ovn-nbctl list Logical_Router > LR2
+ovn-sbctl list datapath_binding > DP2
 
 sleep_controller hv1
 reset_pcap_file snoopvif hv1/snoopvif

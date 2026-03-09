@@ -5920,6 +5920,25 @@ ip_mcast_querier_wait(long long int query_time)
     }
 }
 
+static bool
+garp_rarp_is_enabled(struct ovsdb_idl_index *sbrec_port_binding_by_name,
+                     const struct sbrec_port_binding *pb)
+{
+    if (smap_get_bool(&pb->options, "disable_garp_rarp", false)) {
+        return false;
+    }
+
+    /* Check if GARP probing is disabled on the peer logical router. */
+    const struct sbrec_port_binding *peer = lport_get_peer(
+            pb, sbrec_port_binding_by_name);
+    if (peer && smap_get_bool(&peer->datapath->external_ids,
+                              "disable_garp_rarp", false)) {
+        return false;
+    }
+
+    return true;
+}
+
 /* Get localnet vifs, local l3gw ports and ofport for localnet patch ports. */
 static void
 get_localnet_vifs_l3gwports(
@@ -5967,6 +5986,11 @@ get_localnet_vifs_l3gwports(
                     strcmp(iface_rec->link_state, "up")) {
                 continue;
             }
+
+            if (!garp_rarp_is_enabled(sbrec_port_binding_by_name, pb)) {
+                continue;
+            }
+
             struct local_datapath *ld
                 = get_local_datapath(local_datapaths,
                                      pb->datapath->tunnel_key);
@@ -6129,6 +6153,10 @@ get_nat_addresses_and_keys(struct ovsdb_idl_index *sbrec_port_binding_by_name,
             continue;
         }
 
+        if (!garp_rarp_is_enabled(sbrec_port_binding_by_name, pb)) {
+            continue;
+        }
+
         if (pb->n_nat_addresses) {
             for (int i = 0; i < pb->n_nat_addresses; i++) {
                 consider_nat_address(sbrec_port_binding_by_name,
@@ -6181,25 +6209,6 @@ send_garp_rarp_run(struct rconn *swconn, long long int *send_garp_rarp_time)
             *send_garp_rarp_time = next_announce;
         }
     }
-}
-
-static bool
-garp_rarp_is_enabled(struct ovsdb_idl_index *sbrec_port_binding_by_name,
-                     const struct sbrec_port_binding *pb)
-{
-    if (smap_get_bool(&pb->options, "disable_garp_rarp", false)) {
-        return false;
-    }
-
-    /* Check if GARP probing is disabled on the peer logical router. */
-    const struct sbrec_port_binding *peer = lport_get_peer(
-            pb, sbrec_port_binding_by_name);
-    if (peer && smap_get_bool(&peer->datapath->external_ids,
-                              "disable_garp_rarp", false)) {
-        return false;
-    }
-
-    return true;
 }
 
 /* Called by pinctrl_run(). Runs with in the main ovn-controller
