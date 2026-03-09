@@ -6183,6 +6183,25 @@ send_garp_rarp_run(struct rconn *swconn, long long int *send_garp_rarp_time)
     }
 }
 
+static bool
+garp_rarp_is_enabled(struct ovsdb_idl_index *sbrec_port_binding_by_name,
+                     const struct sbrec_port_binding *pb)
+{
+    if (smap_get_bool(&pb->options, "disable_garp_rarp", false)) {
+        return false;
+    }
+
+    /* Check if GARP probing is disabled on the peer logical router. */
+    const struct sbrec_port_binding *peer = lport_get_peer(
+            pb, sbrec_port_binding_by_name);
+    if (peer && smap_get_bool(&peer->datapath->external_ids,
+                              "disable_garp_rarp", false)) {
+        return false;
+    }
+
+    return true;
+}
+
 /* Called by pinctrl_run(). Runs with in the main ovn-controller
  * thread context. */
 static void
@@ -6240,7 +6259,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
     SSET_FOR_EACH (iface_id, &localnet_vifs) {
         const struct sbrec_port_binding *pb = lport_lookup_by_name(
             sbrec_port_binding_by_name, iface_id);
-        if (pb) {
+        if (pb && garp_rarp_is_enabled(sbrec_port_binding_by_name, pb)) {
             send_garp_rarp_update(ovnsb_idl_txn,
                                   sbrec_mac_binding_by_lport_ip,
                                   local_datapaths, pb, &nat_addresses,
@@ -6253,7 +6272,7 @@ send_garp_rarp_prepare(struct ovsdb_idl_txn *ovnsb_idl_txn,
     SSET_FOR_EACH (gw_port, &local_l3gw_ports) {
         const struct sbrec_port_binding *pb
             = lport_lookup_by_name(sbrec_port_binding_by_name, gw_port);
-        if (pb) {
+        if (pb && garp_rarp_is_enabled(sbrec_port_binding_by_name, pb)) {
             send_garp_rarp_update(ovnsb_idl_txn, sbrec_mac_binding_by_lport_ip,
                                   local_datapaths, pb, &nat_addresses,
                                   garp_max_timeout, garp_continuous);
