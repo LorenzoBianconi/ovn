@@ -20497,7 +20497,7 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
     HMAPX_FOR_EACH (hmapx_node, &trk_data->crupdated) {
         struct ls_stateful_record *ls_stateful_rec = hmapx_node->data;
         /* Sync the new flows to SB. */
-        bool handled = lflow_ref_sync_lflows(
+        bool handled = lflow_ref_resync_flows(
             ls_stateful_rec->lflow_ref, lflows, ovnsb_txn,
             lflow_input->dps,
             lflow_input->ovn_internal_version_changed,
